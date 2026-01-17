@@ -1,509 +1,504 @@
-import express from "express";
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
-import cors from "cors";
-import pkg from "pg";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const { Pool } = pkg;
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const express = require('express');
+const { Pool } = require('pg');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const cors = require('cors');
+const axios = require('axios');
+require('dotenv').config();
 
 const app = express();
-app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const CRICKET_API_KEY = process.env.CRICKET_API_KEY;
+const CRICKET_API_BASE = 'https://api.cricketdata.org';
 
 // Database connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
-const PORT = process.env.PORT || 5000;
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.static('public'));
 
-// Test database connection on startup
-pool.query('SELECT NOW()', (err, res) => {
-  if (err) {
-    console.error('❌ Database connection failed:', err);
-  } else {
-    console.log('✅ Database connected successfully');
-  }
-});
-
-// Auth middleware
-function auth(req, res, next) {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "Authentication required" });
+// API call logging
+let apiCallCount = 0;
+const logApiCall = async (endpoint) => {
+  apiCallCount++;
+  console.log(`API Call #${apiCallCount}: ${endpoint} at ${new Date().toISOString()}`);
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    res.status(403).json({ error: "Invalid or expired token" });
-  }
-}
-
-// ====== AUTHENTICATION ROUTES ======
-
-app.post("/api/auth/register", async (req, res) => {
-  const { username, email, password } = req.body;
-  
-  if (!username || !email || !password) {
-    return res.status(400).json({ error: "All fields are required" });
-  }
-  
-  if (password.length < 6) {
-    return res.status(400).json({ error: "Password must be at least 6 characters" });
-  }
-  
-  try {
-    const hash = await bcrypt.hash(password, 10);
-    const result = await pool.query(
-      `INSERT INTO users (username, email, password_hash, credit_points, total_points) 
-       VALUES ($1, $2, $3, 100, 0) 
-       RETURNING id, username, email, credit_points, total_points`,
-      [username.toLowerCase().trim(), email.toLowerCase().trim(), hash]
-    );
-    
-    const user = result.rows[0];
-    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '30d' });
-    
-    console.log(`✅ New user registered: ${user.username}`);
-    res.status(201).json({ 
-      success: true,
-      token, 
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        credit_points: user.credit_points,
-        total_points: user.total_points
-      }
-    });
-  } catch (e) {
-    console.error('Registration error:', e);
-    if (e.code === "23505") {
-      return res.status(400).json({ error: "Username or email already exists" });
-    }
-    res.status(500).json({ error: "Registration failed. Please try again." });
-  }
-});
-
-app.post("/api/auth/login", async (req, res) => {
-  const { username, password } = req.body;
-  
-  if (!username || !password) {
-    return res.status(400).json({ error: "Username and password required" });
-  }
-  
-  try {
-    const result = await pool.query(
-      "SELECT * FROM users WHERE username = $1 OR email = $1",
-      [username.toLowerCase().trim()]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: "Invalid username or password" });
-    }
-    
-    const user = result.rows[0];
-    const isValid = await bcrypt.compare(password, user.password_hash);
-    
-    if (!isValid) {
-      return res.status(401).json({ error: "Invalid username or password" });
-    }
-    
-    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '30d' });
-    
-    console.log(`✅ User logged in: ${user.username}`);
-    res.json({ 
-      success: true,
-      token, 
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        credit_points: user.credit_points,
-        total_points: user.total_points
-      }
-    });
-  } catch (e) {
-    console.error('Login error:', e);
-    res.status(500).json({ error: "Login failed. Please try again." });
-  }
-});
-
-app.get("/api/auth/profile", auth, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT id, username, email, credit_points, total_points, 
-       (SELECT COUNT(*) FROM fantasy_teams WHERE user_id = users.id) as teams_count
-       FROM users WHERE id = $1`,
-      [req.user.id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
-    }
-    
-    res.json(result.rows[0]);
-  } catch (e) {
-    console.error('Profile fetch error:', e);
-    res.status(500).json({ error: "Failed to fetch profile" });
-  }
-});
-
-// ====== MATCHES ROUTES ======
-
-app.get("/api/matches", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT m.*, 
-       (SELECT COUNT(*) FROM fantasy_teams WHERE match_id = m.id) as teams_count
-       FROM matches m 
-       ORDER BY m.start_date ASC 
-       LIMIT 50`
-    );
-    res.json(result.rows);
-  } catch (e) {
-    console.error('Matches fetch error:', e);
-    res.status(500).json({ error: "Failed to fetch matches" });
-  }
-});
-
-app.get("/api/matches/:id", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT m.*, 
-       (SELECT COUNT(*) FROM fantasy_teams WHERE match_id = m.id) as teams_count
-       FROM matches m WHERE m.id = $1`,
-      [req.params.id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Match not found" });
-    }
-    
-    res.json(result.rows[0]);
-  } catch (e) {
-    console.error('Match fetch error:', e);
-    res.status(500).json({ error: "Failed to fetch match details" });
-  }
-});
-
-app.get("/api/matches/:id/players", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT * FROM players 
-       WHERE match_id = $1 
-       ORDER BY 
-         CASE role 
-           WHEN 'WK' THEN 1 
-           WHEN 'BAT' THEN 2 
-           WHEN 'AR' THEN 3 
-           WHEN 'BOWL' THEN 4 
-         END,
-         credits DESC`,
-      [req.params.id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "No players found for this match" });
-    }
-    
-    res.json(result.rows);
-  } catch (e) {
-    console.error('Players fetch error:', e);
-    res.status(500).json({ error: "Failed to fetch players" });
-  }
-});
-
-// ====== FANTASY TEAMS ROUTES ======
-
-app.post("/api/fantasy-teams", auth, async (req, res) => {
-  const { matchId, teamName, players, captainId, viceCaptainId } = req.body;
-
-  // Validation
-  if (!matchId || !players || !captainId || !viceCaptainId) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
-
-  if (players.length !== 11) {
-    return res.status(400).json({ error: "Team must have exactly 11 players" });
-  }
-
-  if (captainId === viceCaptainId) {
-    return res.status(400).json({ error: "Captain and Vice-Captain must be different players" });
-  }
-
-  // Verify captain and VC are in the team
-  const captainInTeam = players.find(p => p.id === captainId);
-  const vcInTeam = players.find(p => p.id === viceCaptainId);
-  
-  if (!captainInTeam || !vcInTeam) {
-    return res.status(400).json({ error: "Captain and Vice-Captain must be from selected players" });
-  }
-
-  // Role validation
-  const roleCount = { WK: 0, BAT: 0, AR: 0, BOWL: 0 };
-  const teamCount = {};
-  let totalCredits = 0;
-
-  players.forEach(player => {
-    roleCount[player.role] = (roleCount[player.role] || 0) + 1;
-    teamCount[player.team] = (teamCount[player.team] || 0) + 1;
-    totalCredits += parseFloat(player.credits || 0);
-  });
-
-  // Dream11 rules validation
-  if (roleCount.WK < 1 || roleCount.WK > 4) {
-    return res.status(400).json({ error: "Select 1-4 Wicket Keepers" });
-  }
-  if (roleCount.BAT < 3 || roleCount.BAT > 6) {
-    return res.status(400).json({ error: "Select 3-6 Batters" });
-  }
-  if (roleCount.AR < 1 || roleCount.AR > 4) {
-    return res.status(400).json({ error: "Select 1-4 All-Rounders" });
-  }
-  if (roleCount.BOWL < 3 || roleCount.BOWL > 6) {
-    return res.status(400).json({ error: "Select 3-6 Bowlers" });
-  }
-
-  if (totalCredits > 100) {
-    return res.status(400).json({ 
-      error: `Credit limit exceeded: ${totalCredits.toFixed(1)}/100` 
-    });
-  }
-
-  const maxFromOneTeam = Math.max(...Object.values(teamCount));
-  if (maxFromOneTeam > 7) {
-    return res.status(400).json({ 
-      error: "Maximum 7 players allowed from one team" 
-    });
-  }
-
-  try {
-    const result = await pool.query(
-      `INSERT INTO fantasy_teams 
-       (user_id, match_id, team_name, players, captain_id, vice_captain_id, total_points, credits_used) 
-       VALUES ($1, $2, $3, $4, $5, $6, 0, $7) 
-       RETURNING id, team_name, created_at`,
-      [
-        req.user.id, 
-        matchId, 
-        teamName || `Team ${Date.now()}`, 
-        JSON.stringify(players), 
-        captainId, 
-        viceCaptainId,
-        totalCredits
-      ]
-    );
-    
-    console.log(`✅ Team created: ${result.rows[0].team_name} by user ${req.user.username}`);
-    res.status(201).json({ 
-      success: true, 
-      message: "Team created successfully!", 
-      team: result.rows[0] 
-    });
-  } catch (e) {
-    console.error('Team creation error:', e);
-    res.status(500).json({ error: "Failed to save team. Please try again." });
-  }
-});
-
-app.get("/api/my-teams", auth, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT ft.*, m.team1, m.team2, m.status, m.start_date
-       FROM fantasy_teams ft 
-       JOIN matches m ON ft.match_id = m.id 
-       WHERE ft.user_id = $1 
-       ORDER BY ft.created_at DESC`,
-      [req.user.id]
-    );
-    res.json(result.rows);
-  } catch (e) {
-    console.error('My teams fetch error:', e);
-    res.status(500).json({ error: "Failed to fetch your teams" });
-  }
-});
-
-app.get("/api/fantasy-teams/:id", auth, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT ft.*, m.team1, m.team2 
-       FROM fantasy_teams ft 
-       JOIN matches m ON ft.match_id = m.id 
-       WHERE ft.id = $1 AND ft.user_id = $2`,
-      [req.params.id, req.user.id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Team not found" });
-    }
-    
-    res.json(result.rows[0]);
-  } catch (e) {
-    console.error('Team fetch error:', e);
-    res.status(500).json({ error: "Failed to fetch team details" });
-  }
-});
-
-// ====== SIMULATION ENGINE ======
-
-app.post("/api/simulate/:matchId", auth, async (req, res) => {
-  const { matchId } = req.params;
-  
-  try {
-    // Get all teams for this match
-    const teamsResult = await pool.query(
-      "SELECT * FROM fantasy_teams WHERE match_id = $1",
-      [matchId]
-    );
-
-    if (teamsResult.rows.length === 0) {
-      return res.status(404).json({ error: "No teams found for this match" });
-    }
-
-    let updatedCount = 0;
-
-    for (const team of teamsResult.rows) {
-      const players = JSON.parse(team.players);
-      let matchScore = 0;
-
-      players.forEach(player => {
-        // Role-based scoring simulation
-        let basePoints = 0;
-        
-        switch(player.role) {
-          case 'BAT':
-            // Batsmen: 10-80 points
-            basePoints = Math.floor(Math.random() * 70) + 10;
-            break;
-          case 'BOWL':
-            // Bowlers: 15-75 points
-            basePoints = Math.floor(Math.random() * 60) + 15;
-            break;
-          case 'AR':
-            // All-rounders: 20-85 points
-            basePoints = Math.floor(Math.random() * 65) + 20;
-            break;
-          case 'WK':
-            // Wicket-keepers: 8-60 points
-            basePoints = Math.floor(Math.random() * 52) + 8;
-            break;
-        }
-
-        // Apply captain/VC multipliers
-        if (player.id === team.captain_id) {
-          basePoints = basePoints * 2; // Captain gets 2x
-        } else if (player.id === team.vice_captain_id) {
-          basePoints = basePoints * 1.5; // VC gets 1.5x
-        }
-
-        matchScore += basePoints;
-      });
-
-      const finalScore = Math.round(matchScore);
-
-      // Update team score
-      await pool.query(
-        "UPDATE fantasy_teams SET total_points = $1 WHERE id = $2",
-        [finalScore, team.id]
-      );
-
-      // Update user's total points
-      await pool.query(
-        "UPDATE users SET total_points = total_points + $1 WHERE id = $2",
-        [finalScore, team.user_id]
-      );
-
-      updatedCount++;
-    }
-
-    // Update match status
     await pool.query(
-      "UPDATE matches SET status = 'Completed' WHERE id = $1",
+      'INSERT INTO api_call_log (endpoint, timestamp) VALUES ($1, NOW())',
+      [endpoint]
+    );
+  } catch (err) {
+    console.error('Error logging API call:', err);
+  }
+};
+
+// JWT Authentication Middleware
+const authenticateToken = (req, res, next) => {
+  const token = req.headers['authorization']?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Access denied' });
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.status(403).json({ error: 'Invalid token' });
+    req.user = user;
+    next();
+  });
+};
+
+// CricketData.org API Helper
+const fetchCricketData = async (endpoint, params = {}) => {
+  if (!CRICKET_API_KEY) {
+    console.log('No API key, using fallback data');
+    return null;
+  }
+
+  try {
+    const url = `${CRICKET_API_BASE}/${endpoint}`;
+    params.apikey = CRICKET_API_KEY;
+
+    await logApiCall(endpoint);
+
+    const response = await axios.get(url, { 
+      params,
+      timeout: 10000 
+    });
+
+    return response.data;
+  } catch (error) {
+    console.error(`Cricket API Error (${endpoint}):`, error.message);
+    return null;
+  }
+};
+
+// Seed hardcoded fallback data
+const seedFallbackData = async () => {
+  try {
+    const matchCheck = await pool.query('SELECT COUNT(*) FROM matches');
+    if (parseInt(matchCheck.rows[0].count) > 0) {
+      console.log('Matches already exist, skipping seed');
+      return;
+    }
+
+    // Insert hardcoded matches
+    const matches = [
+      { name: 'India vs Australia - 1st T20I', date: '2026-01-20', api_match_id: 'fallback_1' },
+      { name: 'England vs South Africa - 2nd ODI', date: '2026-01-22', api_match_id: 'fallback_2' }
+    ];
+
+    for (const match of matches) {
+      const result = await pool.query(
+        'INSERT INTO matches (name, match_date, api_match_id, is_live) VALUES ($1, $2, $3, true) RETURNING id',
+        [match.name, match.date, match.api_match_id]
+      );
+
+      const matchId = result.rows[0].id;
+
+      // Insert players for India vs Australia
+      if (match.api_match_id === 'fallback_1') {
+        const players = [
+          // Wicketkeepers
+          { name: 'Rishabh Pant', role: 'WK', team: 'India', credits: 10 },
+          { name: 'Alex Carey', role: 'WK', team: 'Australia', credits: 8.5 },
+          // Batsmen
+          { name: 'Virat Kohli', role: 'BAT', team: 'India', credits: 11 },
+          { name: 'Rohit Sharma', role: 'BAT', team: 'India', credits: 10.5 },
+          { name: 'Steve Smith', role: 'BAT', team: 'Australia', credits: 10 },
+          { name: 'David Warner', role: 'BAT', team: 'Australia', credits: 9.5 },
+          { name: 'Marnus Labuschagne', role: 'BAT', team: 'Australia', credits: 9 },
+          { name: 'Shubman Gill', role: 'BAT', team: 'India', credits: 9 },
+          // All-rounders
+          { name: 'Hardik Pandya', role: 'AR', team: 'India', credits: 10 },
+          { name: 'Ravindra Jadeja', role: 'AR', team: 'India', credits: 9.5 },
+          { name: 'Glenn Maxwell', role: 'AR', team: 'Australia', credits: 9.5 },
+          { name: 'Marcus Stoinis', role: 'AR', team: 'Australia', credits: 8.5 },
+          // Bowlers
+          { name: 'Jasprit Bumrah', role: 'BOWL', team: 'India', credits: 10.5 },
+          { name: 'Mohammed Shami', role: 'BOWL', team: 'India', credits: 9.5 },
+          { name: 'Kuldeep Yadav', role: 'BOWL', team: 'India', credits: 8.5 },
+          { name: 'Pat Cummins', role: 'BOWL', team: 'Australia', credits: 10 },
+          { name: 'Mitchell Starc', role: 'BOWL', team: 'Australia', credits: 9.5 },
+          { name: 'Adam Zampa', role: 'BOWL', team: 'Australia', credits: 8.5 },
+          { name: 'Nathan Lyon', role: 'BOWL', team: 'Australia', credits: 8 },
+          { name: 'Yuzvendra Chahal', role: 'BOWL', team: 'India', credits: 8.5 }
+        ];
+
+        for (const player of players) {
+          await pool.query(
+            'INSERT INTO players (match_id, name, role, team, credits) VALUES ($1, $2, $3, $4, $5)',
+            [matchId, player.name, player.role, player.team, player.credits]
+          );
+        }
+      }
+
+      // Insert players for England vs South Africa
+      if (match.api_match_id === 'fallback_2') {
+        const players = [
+          { name: 'Jos Buttler', role: 'WK', team: 'England', credits: 10 },
+          { name: 'Quinton de Kock', role: 'WK', team: 'South Africa', credits: 9.5 },
+          { name: 'Joe Root', role: 'BAT', team: 'England', credits: 10.5 },
+          { name: 'Ben Duckett', role: 'BAT', team: 'England', credits: 8.5 },
+          { name: 'Aiden Markram', role: 'BAT', team: 'South Africa', credits: 9 },
+          { name: 'Rassie van der Dussen', role: 'BAT', team: 'South Africa', credits: 8.5 },
+          { name: 'Ben Stokes', role: 'AR', team: 'England', credits: 10.5 },
+          { name: 'Moeen Ali', role: 'AR', team: 'England', credits: 8.5 },
+          { name: 'Andile Phehlukwayo', role: 'AR', team: 'South Africa', credits: 8 },
+          { name: 'Keshav Maharaj', role: 'AR', team: 'South Africa', credits: 8 },
+          { name: 'James Anderson', role: 'BOWL', team: 'England', credits: 9 },
+          { name: 'Stuart Broad', role: 'BOWL', team: 'England', credits: 9 },
+          { name: 'Kagiso Rabada', role: 'BOWL', team: 'South Africa', credits: 10 },
+          { name: 'Anrich Nortje', role: 'BOWL', team: 'South Africa', credits: 9 },
+          { name: 'Lungi Ngidi', role: 'BOWL', team: 'South Africa', credits: 8.5 },
+          { name: 'Reece Topley', role: 'BOWL', team: 'England', credits: 8 }
+        ];
+
+        for (const player of players) {
+          await pool.query(
+            'INSERT INTO players (match_id, name, role, team, credits) VALUES ($1, $2, $3, $4, $5)',
+            [matchId, player.name, player.role, player.team, player.credits]
+          );
+        }
+      }
+    }
+
+    console.log('Fallback data seeded successfully');
+  } catch (error) {
+    console.error('Error seeding fallback data:', error);
+  }
+};
+
+// Fetch and update matches from API
+const refreshMatchesFromAPI = async () => {
+  console.log('Refreshing matches from Cricket API...');
+
+  const data = await fetchCricketData('currentMatches');
+
+  if (!data || !data.data) {
+    console.log('No API data, using fallback');
+    return;
+  }
+
+  try {
+    const matches = data.data.slice(0, 2); // Limit to 2 matches
+
+    for (const match of matches) {
+      const matchName = `${match.team1} vs ${match.team2}`;
+      const matchDate = match.dateTimeGMT ? new Date(match.dateTimeGMT) : new Date();
+
+      const existing = await pool.query(
+        'SELECT id FROM matches WHERE api_match_id = $1',
+        [match.id]
+      );
+
+      if (existing.rows.length === 0) {
+        await pool.query(
+          'INSERT INTO matches (name, match_date, api_match_id, is_live) VALUES ($1, $2, $3, true)',
+          [matchName, matchDate, match.id]
+        );
+        console.log(`Added new match: ${matchName}`);
+      }
+    }
+  } catch (error) {
+    console.error('Error refreshing matches:', error);
+  }
+};
+
+// Daily refresh job (runs every 24 hours)
+const startDailyRefresh = () => {
+  refreshMatchesFromAPI();
+  setInterval(refreshMatchesFromAPI, 24 * 60 * 60 * 1000);
+};
+
+// AUTH ROUTES
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, password, username } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password required' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const result = await pool.query(
+      'INSERT INTO users (email, password, username) VALUES ($1, $2, $3) RETURNING id, email, username',
+      [email, hashedPassword, username || email.split('@')[0]]
+    );
+
+    const token = jwt.sign({ id: result.rows[0].id, email }, JWT_SECRET, { expiresIn: '7d' });
+
+    res.json({ 
+      token, 
+      user: { 
+        id: result.rows[0].id, 
+        email: result.rows[0].email,
+        username: result.rows[0].username 
+      } 
+    });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(400).json({ error: 'Email already exists' });
+    }
+    res.status(500).json({ error: 'Registration failed' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const user = result.rows[0];
+    const validPassword = await bcrypt.compare(password, user.password);
+
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+
+    res.json({ 
+      token, 
+      user: { 
+        id: user.id, 
+        email: user.email,
+        username: user.username 
+      } 
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// MATCH ROUTES
+app.get('/api/matches', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM matches WHERE is_live = true ORDER BY match_date ASC'
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch matches' });
+  }
+});
+
+// PLAYER ROUTES
+app.get('/api/players/:matchId', authenticateToken, async (req, res) => {
+  try {
+    const { matchId } = req.params;
+    const result = await pool.query(
+      'SELECT * FROM players WHERE match_id = $1 ORDER BY role, credits DESC',
+      [matchId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch players' });
+  }
+});
+
+// TEAM ROUTES
+app.post('/api/teams', authenticateToken, async (req, res) => {
+  try {
+    const { matchId, players, captainId, viceCaptainId } = req.body;
+
+    // Validation
+    if (!players || players.length !== 11) {
+      return res.status(400).json({ error: 'Must select exactly 11 players' });
+    }
+
+    // Validate credits
+    const playerIds = players.map(p => p.id);
+    const playerData = await pool.query(
+      'SELECT * FROM players WHERE id = ANY($1)',
+      [playerIds]
+    );
+
+    const totalCredits = playerData.rows.reduce((sum, p) => sum + parseFloat(p.credits), 0);
+    if (totalCredits > 100) {
+      return res.status(400).json({ error: 'Total credits exceed 100' });
+    }
+
+    // Validate role counts
+    const roleCounts = {};
+    playerData.rows.forEach(p => {
+      roleCounts[p.role] = (roleCounts[p.role] || 0) + 1;
+    });
+
+    if (roleCounts.WK < 1 || roleCounts.WK > 4) {
+      return res.status(400).json({ error: 'Select 1-4 Wicketkeepers' });
+    }
+    if (roleCounts.BAT < 3 || roleCounts.BAT > 6) {
+      return res.status(400).json({ error: 'Select 3-6 Batsmen' });
+    }
+    if (roleCounts.AR < 1 || roleCounts.AR > 4) {
+      return res.status(400).json({ error: 'Select 1-4 All-rounders' });
+    }
+    if (roleCounts.BOWL < 3 || roleCounts.BOWL > 6) {
+      return res.status(400).json({ error: 'Select 3-6 Bowlers' });
+    }
+
+    // Save team
+    const result = await pool.query(
+      `INSERT INTO teams (user_id, match_id, players_json, captain_id, vice_captain_id, created_at) 
+       VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING id`,
+      [req.user.id, matchId, JSON.stringify(players), captainId, viceCaptainId]
+    );
+
+    res.json({ teamId: result.rows[0].id, message: 'Team created successfully' });
+  } catch (error) {
+    console.error('Team creation error:', error);
+    res.status(500).json({ error: 'Failed to create team' });
+  }
+});
+
+app.get('/api/teams/user', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT t.*, m.name as match_name, m.match_date 
+       FROM teams t 
+       JOIN matches m ON t.match_id = m.id 
+       WHERE t.user_id = $1 
+       ORDER BY t.created_at DESC`,
+      [req.user.id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch teams' });
+  }
+});
+
+// SIMULATION ROUTE
+app.post('/api/simulate/:teamId', authenticateToken, async (req, res) => {
+  try {
+    const { teamId } = req.params;
+
+    const teamResult = await pool.query(
+      'SELECT * FROM teams WHERE id = $1 AND user_id = $2',
+      [teamId, req.user.id]
+    );
+
+    if (teamResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    const team = teamResult.rows[0];
+    const players = JSON.parse(team.players_json);
+
+    // Simulate player scores
+    const playerScores = players.map(player => {
+      let points = 0;
+
+      // Batting points (random realistic simulation)
+      const runs = Math.floor(Math.random() * 80);
+      points += runs; // 1 point per run
+
+      if (runs >= 150) points += 16;
+      else if (runs >= 100) points += 8;
+      else if (runs >= 50) points += 4;
+
+      const fours = Math.floor(runs / 6);
+      const sixes = Math.floor(runs / 12);
+      points += fours * 1 + sixes * 2;
+
+      const strikeRate = 100 + Math.random() * 80;
+      if (strikeRate > 150) points += 6;
+
+      // Bowling points (for bowlers and all-rounders)
+      if (player.role === 'BOWL' || player.role === 'AR') {
+        const wickets = Math.floor(Math.random() * 5);
+        points += wickets * 25;
+
+        if (wickets >= 5) points += 50;
+        else if (wickets >= 4) points += 8;
+
+        const economy = 4 + Math.random() * 6;
+        if (economy < 5) points += 6;
+      }
+
+      // Captain and Vice-Captain multipliers
+      let multiplier = 1;
+      if (player.id === team.captain_id) multiplier = 2;
+      else if (player.id === team.vice_captain_id) multiplier = 1.5;
+
+      return {
+        playerId: player.id,
+        playerName: player.name,
+        points: Math.round(points * multiplier),
+        runs,
+        wickets: (player.role === 'BOWL' || player.role === 'AR') ? Math.floor(Math.random() * 5) : 0
+      };
+    });
+
+    const totalScore = playerScores.reduce((sum, p) => sum + p.points, 0);
+
+    // Update team score
+    await pool.query(
+      'UPDATE teams SET total_score = $1, simulated_at = NOW() WHERE id = $2',
+      [totalScore, teamId]
+    );
+
+    res.json({ totalScore, playerScores });
+  } catch (error) {
+    console.error('Simulation error:', error);
+    res.status(500).json({ error: 'Simulation failed' });
+  }
+});
+
+// LEADERBOARD ROUTE
+app.get('/api/leaderboard/:matchId', authenticateToken, async (req, res) => {
+  try {
+    const { matchId } = req.params;
+
+    const result = await pool.query(
+      `SELECT t.id, t.total_score, u.username, u.email, t.created_at,
+              ROW_NUMBER() OVER (ORDER BY t.total_score DESC) as rank
+       FROM teams t
+       JOIN users u ON t.user_id = u.id
+       WHERE t.match_id = $1 AND t.total_score IS NOT NULL
+       ORDER BY t.total_score DESC`,
       [matchId]
     );
 
-    console.log(`✅ Match ${matchId} simulated: ${updatedCount} teams updated`);
-    res.json({ 
-      success: true, 
-      message: `Simulation complete! ${updatedCount} teams updated.`,
-      teamsUpdated: updatedCount
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
+  }
+});
+
+// Initialize database and start server
+const initializeApp = async () => {
+  try {
+    // Test database connection
+    await pool.query('SELECT NOW()');
+    console.log('✅ Database connected');
+
+    // Seed fallback data
+    await seedFallbackData();
+
+    // Start daily API refresh
+    if (CRICKET_API_KEY) {
+      console.log('✅ Cricket API key found, starting refresh job');
+      startDailyRefresh();
+    } else {
+      console.log('⚠️  No Cricket API key, using fallback data only');
+    }
+
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
     });
-  } catch (e) {
-    console.error('Simulation error:', e);
-    res.status(500).json({ error: "Simulation failed. Please try again." });
+  } catch (error) {
+    console.error('❌ Failed to initialize app:', error);
+    process.exit(1);
   }
-});
+};
 
-// ====== LEADERBOARD ======
-
-app.get("/api/leaderboard", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT 
-        u.id,
-        u.username, 
-        u.total_points,
-        (SELECT COUNT(*) FROM fantasy_teams WHERE user_id = u.id) as teams_count,
-        RANK() OVER (ORDER BY u.total_points DESC) as rank
-       FROM users u 
-       WHERE u.total_points > 0
-       ORDER BY u.total_points DESC 
-       LIMIT 100`
-    );
-    res.json(result.rows);
-  } catch (e) {
-    console.error('Leaderboard fetch error:', e);
-    res.status(500).json({ error: "Failed to fetch leaderboard" });
-  }
-});
-
-app.get("/api/leaderboard/match/:matchId", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT 
-        ft.id,
-        ft.team_name,
-        ft.total_points,
-        u.username,
-        RANK() OVER (ORDER BY ft.total_points DESC) as rank
-       FROM fantasy_teams ft
-       JOIN users u ON ft.user_id = u.id
-       WHERE ft.match_id = $1 AND ft.total_points > 0
-       ORDER BY ft.total_points DESC 
-       LIMIT 50`,
-      [req.params.matchId]
-    );
-    res.json(result.rows);
-  } catch (e) {
-    console.error('Match leaderboard fetch error:', e);
-    res.status(500).json({ error: "Failed to fetch match leaderboard" });
-  }
-});
-
-// Health check
-app.get("/api/health", async (req, res) => {
-  try {
-    await pool.query('SELECT 1');
-    res.json({ status: 'healthy', database: 'connected' });
-  } catch (e) {
-    res.status(500).json({ status: 'unhealthy', database: 'disconnected' });
-  }
-});
-
-// SPA fallback
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-// Start server
-app.listen(PORT, () => {
-  console.log(`🏏 Fantasy Cricket Pro running on port ${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-});
+initializeApp();
