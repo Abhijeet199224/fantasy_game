@@ -1,110 +1,148 @@
 import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
-import pkg from "pg";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import cors from "cors";
+import pkg from "pg";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const { Pool } = pkg;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const app = express();
 
-// ====== Configuration ======
-const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || "fallback-secret";
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+const JWT_SECRET = process.env.JWT_SECRET || "dev_secret";
 
-// ====== 1. Authentication (Find or Create) ======
-app.post("/api/auth/authenticate", async (req, res) => {
-  const { email, password } = req.body;
-  if (!email?.includes('@') || password?.length < 6) {
-    return res.status(400).json({ error: "Valid email and 6-char password required." });
-  }
-
+// ====== Middleware ======
+function auth(req, res, next) {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "No token provided" });
   try {
-    const userEmail = email.toLowerCase().trim();
-    const result = await pool.query("SELECT * FROM users WHERE email = $1", [userEmail]);
-    let user = result.rows[0];
-
-    if (!user) {
-      const hash = await bcrypt.hash(password, 10);
-      const insert = await pool.query(
-        "INSERT INTO users (email, password_hash, username, credit_points) VALUES ($1, $2, $3, 100) RETURNING *",
-        [userEmail, hash, userEmail.split('@')[0]]
-      );
-      user = insert.rows[0];
-    } else {
-      const isMatch = await bcrypt.compare(password, user.password_hash);
-      if (!isMatch) return res.status(401).json({ error: "Invalid password." });
-    }
-
-    const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: user.id, email: user.email, username: user.username } });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Database connection failed." });
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    res.status(403).json({ error: "Invalid or expired token" });
   }
-});
+}
 
-// ====== 2. Fantasy Team Builder Logic ======
-app.post("/api/fantasy-teams", async (req, res) => {
-  const { userId, matchId, teamName, players, captainId, viceCaptainId } = req.body;
-
-  // Dream11 Rules Validation
-  if (players.length !== 11) return res.status(400).json({ error: "Team must have exactly 11 players." });
-  if (!captainId || !viceCaptainId) return res.status(400).json({ error: "Captain and Vice-Captain are required." });
-
+// ====== Auth Routes ======
+app.post("/api/auth/register", async (req, res) => {
+  const { username, email, password } = req.body;
+  const hash = await bcrypt.hash(password, 10);
   try {
     const result = await pool.query(
-      "INSERT INTO fantasy_teams (user_id, match_id, team_name, players, captain_id, vice_captain_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-      [userId, matchId, teamName, JSON.stringify(players), captainId, viceCaptainId]
+      "INSERT INTO users (username, email, password_hash, credit_points) VALUES ($1, $2, $3, 100) RETURNING id, username",
+      [username, email, hash]
     );
-    res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to save team." });
+    const token = jwt.sign({ id: result.rows[0].id }, JWT_SECRET);
+    res.json({ token, user: result.rows[0] });
+  } catch (e) {
+    if (e.code === "23505") return res.status(400).json({ error: "User already exists" });
+    res.status(500).json({ error: "Registration failed" });
   }
 });
 
-// ====== 3. Match Simulation Engine ======
-app.post("/api/simulate/:matchId", async (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
+  const { username, password } = req.body;
+  const r = await pool.query("SELECT * FROM users WHERE username=$1 OR email=$1", [username]);
+  if (!r.rows.length) return res.status(401).json({ error: "User not found" });
+  
+  const ok = await bcrypt.compare(password, r.rows[0].password_hash);
+  if (!ok) return res.status(401).json({ error: "Incorrect password" });
+  
+  const token = jwt.sign({ id: r.rows[0].id }, JWT_SECRET);
+  res.json({ token, user: { id: r.rows[0].id, username: r.rows[0].username } });
+});
+
+// ====== Match & Player Routes ======
+app.get("/api/matches", async (_, res) => {
+  try {
+    const r = await pool.query("SELECT * FROM matches ORDER BY start_date ASC");
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: "Could not fetch matches" }); }
+});
+
+app.get("/api/matches/:id/players", async (req, res) => {
+  try {
+    const r = await pool.query("SELECT * FROM players WHERE match_id = $1", [req.params.id]);
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: "Could not fetch players" }); }
+});
+
+// ====== Dream11 Team Builder Logic ======
+app.post("/api/fantasy-teams", auth, async (req, res) => {
+  const { matchId, teamName, players, captainId, viceCaptainId } = req.body;
+
+  // 1. Dream11 Rule Validations
+  if (players.length !== 11) return res.status(400).json({ error: "Team must have exactly 11 players" });
+  if (captainId === viceCaptainId) return res.status(400).json({ error: "C and VC must be different" });
+
+  const roles = { WK: 0, BAT: 0, AR: 0, BOWL: 0 };
+  let totalCredits = 0;
+  players.forEach(p => {
+    roles[p.role] = (roles[p.role] || 0) + 1;
+    totalCredits += Number(p.credits || 0);
+  });
+
+  if (roles.WK < 1 || roles.WK > 4) return res.status(400).json({ error: "Select 1-4 Wicket Keepers" });
+  if (roles.BAT < 3 || roles.BAT > 6) return res.status(400).json({ error: "Select 3-6 Batters" });
+  if (roles.AR < 1 || roles.AR > 4) return res.status(400).json({ error: "Select 1-4 All-Rounders" });
+  if (roles.BOWL < 3 || roles.BOWL > 6) return res.status(400).json({ error: "Select 3-6 Bowlers" });
+  if (totalCredits > 100) return res.status(400).json({ error: "Credit limit (100) exceeded" });
+
+  try {
+    await pool.query(
+      "INSERT INTO fantasy_teams (user_id, match_id, team_name, players, captain_id, vice_captain_id) VALUES ($1, $2, $3, $4, $5, $6)",
+      [req.user.id, matchId, teamName, JSON.stringify(players), captainId, viceCaptainId]
+    );
+    res.json({ ok: true, message: "Team created successfully!" });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to save team" });
+  }
+});
+
+// ====== Match Simulation Engine ======
+app.post("/api/simulate/:matchId", auth, async (req, res) => {
   const { matchId } = req.params;
   try {
-    // Get all teams for this match
-    const teams = await pool.query("SELECT * FROM fantasy_teams WHERE match_id = $1", [matchId]);
+    // Get all user teams for this match
+    const teamsResult = await pool.query("SELECT * FROM fantasy_teams WHERE match_id = $1", [matchId]);
     
-    for (let team of teams.rows) {
-      let totalPoints = 0;
+    for (const team of teamsResult.rows) {
+      let matchScore = 0;
       const players = JSON.parse(team.players);
-      
+
       players.forEach(p => {
-        // Weighted random scoring (0 to 100 points per player)
-        let pPoints = Math.floor(Math.random() * 50) + 10;
+        // Weighted random points based on player base skill
+        let pPoints = Math.floor(Math.random() * 60) + 10;
         
         // Captain Multipliers
-        if (p.id == team.captain_id) pPoints *= 2;
-        if (p.id == team.vice_captain_id) pPoints *= 1.5;
+        if (p.id == team.captain_id) pPoints *= 2;        // 2x for Captain
+        if (p.id == team.vice_captain_id) pPoints *= 1.5; // 1.5x for VC
         
-        totalPoints += pPoints;
+        matchScore += pPoints;
       });
 
-      // Update team points and global leaderboard
-      await pool.query("UPDATE fantasy_teams SET total_points = $1 WHERE id = $2", [totalPoints, team.id]);
-      await pool.query("UPDATE users SET total_points = total_points + $1 WHERE id = $2", [totalPoints, team.user_id]);
+      // Update team score and user's global total
+      await pool.query("UPDATE fantasy_teams SET total_points = $1 WHERE id = $2", [Math.round(matchScore), team.id]);
+      await pool.query("UPDATE users SET total_points = total_points + $1 WHERE id = $2", [Math.round(matchScore), team.user_id]);
     }
-    
-    res.json({ message: "Simulation successful! Points updated." });
-  } catch (err) {
-    res.status(500).json({ error: "Simulation failed." });
+
+    res.json({ ok: true, message: "Simulation complete! Check the leaderboard." });
+  } catch (e) {
+    res.status(500).json({ error: "Simulation failed" });
   }
 });
 
-app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-app.listen(PORT, () => console.log(`🚀 Fantasy Engine Live on port ${PORT}`));
+app.listen(process.env.PORT || 5000, () =>
+  console.log("🚀 Fantasy Cricket Engine Running")
+);
