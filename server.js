@@ -50,20 +50,37 @@ app.post("/api/auth/register", async (req, res) => {
 app.post("/api/auth/login", async (req, res) => {
   const { username, password } = req.body;
 
+  // 1️⃣ Validate input
+  if (!username || !password) {
+    return res.status(400).json({ error: "Username/email and password required" });
+  }
+
+  // 2️⃣ Allow login via username OR email
   const r = await pool.query(
-    "SELECT * FROM users WHERE username=$1",
+    `SELECT * FROM users 
+     WHERE username=$1 OR email=$1`,
     [username]
   );
 
-  if (!r.rows.length) return res.status(401).json({ error: "Invalid login" });
+  if (!r.rows.length) {
+    return res.status(401).json({ error: "Invalid username/email or password" });
+  }
 
   const user = r.rows[0];
-  const ok = await bcrypt.compare(password, user.password_hash);
-  if (!ok) return res.status(401).json({ error: "Invalid login" });
 
-  const token = jwt.sign({ id: user.id }, JWT_SECRET);
+  // 3️⃣ Compare password
+  const ok = await bcrypt.compare(password, user.password_hash);
+  if (!ok) {
+    return res.status(401).json({ error: "Invalid username/email or password" });
+  }
+
+  // 4️⃣ Generate token
+  const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "7d" });
+
+  // 5️⃣ Send response
   res.json({ token });
 });
+
 
 app.get("/api/auth/profile", auth, async (req, res) => {
   const r = await pool.query(
