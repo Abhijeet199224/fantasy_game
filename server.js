@@ -19,12 +19,13 @@ const JWT_SECRET = process.env.JWT_SECRET;
 // ---------- AUTH ----------
 function auth(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.sendStatus(401);
+  if (!token) return res.status(401).json({ error: "No token" });
+
   try {
     req.user = jwt.verify(token, JWT_SECRET);
     next();
   } catch {
-    res.sendStatus(403);
+    res.status(403).json({ error: "Invalid token" });
   }
 }
 
@@ -33,60 +34,66 @@ app.post("/api/auth/register", async (req, res) => {
   const hash = await bcrypt.hash(password, 10);
 
   try {
-    const result = await pool.query(
-      "INSERT INTO users (username, email, password_hash) VALUES ($1,$2,$3) RETURNING id",
+    const r = await pool.query(
+      `INSERT INTO users (username,email,password_hash)
+       VALUES ($1,$2,$3) RETURNING id`,
       [username, email, hash]
     );
 
-    const token = jwt.sign({ id: result.rows[0].id }, JWT_SECRET);
+    const token = jwt.sign({ id: r.rows[0].id }, JWT_SECRET);
     res.json({ token });
-  } catch (e) {
+  } catch {
     res.status(400).json({ error: "User already exists" });
   }
 });
 
 app.post("/api/auth/login", async (req, res) => {
   const { username, password } = req.body;
-  const result = await pool.query(
+
+  const r = await pool.query(
     "SELECT * FROM users WHERE username=$1",
     [username]
   );
 
-  if (!result.rows.length) return res.sendStatus(401);
-  const user = result.rows[0];
+  if (!r.rows.length) return res.status(401).json({ error: "Invalid login" });
 
+  const user = r.rows[0];
   const ok = await bcrypt.compare(password, user.password_hash);
-  if (!ok) return res.sendStatus(401);
+  if (!ok) return res.status(401).json({ error: "Invalid login" });
 
   const token = jwt.sign({ id: user.id }, JWT_SECRET);
   res.json({ token });
 });
 
 app.get("/api/auth/profile", auth, async (req, res) => {
-  const result = await pool.query(
+  const r = await pool.query(
     "SELECT username,email,credit_points,total_points FROM users WHERE id=$1",
     [req.user.id]
   );
-  res.json(result.rows[0]);
+  res.json(r.rows[0]);
 });
 
 // ---------- MATCHES ----------
 app.get("/api/matches", async (_, res) => {
-  const result = await pool.query("SELECT * FROM matches ORDER BY start_date");
-  res.json(result.rows);
+  const r = await pool.query("SELECT * FROM matches");
+  res.json(r.rows);
 });
 
 app.get("/api/matches/:id/players", async (req, res) => {
-  const result = await pool.query(
+  const r = await pool.query(
     "SELECT * FROM players WHERE match_id=$1",
     [req.params.id]
   );
-  res.json(result.rows);
+  res.json(r.rows);
 });
 
-// ---------- FANTASY TEAMS ----------
+// ---------- TEAMS ----------
 app.post("/api/fantasy-teams", auth, async (req, res) => {
   const { matchId, teamName, selectedPlayers } = req.body;
+
+  if (selectedPlayers.length !== 11) {
+    return res.status(400).json({ error: "Select 11 players" });
+  }
 
   await pool.query(
     `INSERT INTO fantasy_teams (user_id, match_id, team_name, players)
@@ -98,29 +105,27 @@ app.post("/api/fantasy-teams", auth, async (req, res) => {
 });
 
 app.get("/api/fantasy-teams", auth, async (req, res) => {
-  const result = await pool.query(
+  const r = await pool.query(
     "SELECT * FROM fantasy_teams WHERE user_id=$1",
     [req.user.id]
   );
-  res.json(result.rows);
+  res.json(r.rows);
 });
 
 // ---------- LEADERBOARD ----------
 app.get("/api/global-leaderboard", async (_, res) => {
-  const result = await pool.query(`
-    SELECT username, total_points,
-    (SELECT COUNT(*) FROM fantasy_teams ft WHERE ft.user_id=u.id) AS teams_count
-    FROM users u
+  const r = await pool.query(`
+    SELECT username,total_points,
+    (SELECT COUNT(*) FROM fantasy_teams WHERE user_id=users.id) AS teams_count
+    FROM users
     ORDER BY total_points DESC
   `);
 
-  res.json(
-    result.rows.map((u, i) => ({ ...u, rank: i + 1 }))
-  );
+  res.json(r.rows.map((u, i) => ({ ...u, rank: i + 1 })));
 });
 
 app.get("*", (_, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  res.sendFile(path.join(__dirname, "public/index.html"));
 });
 
 app.listen(process.env.PORT || 5000);
