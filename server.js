@@ -12,9 +12,8 @@ const app = express();
 
 // ====== Configuration ======
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || "change-me-in-render-settings";
+const JWT_SECRET = process.env.JWT_SECRET || "fallback-secret";
 
-// Database Connection (Render uses SSL for external connections)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
@@ -23,82 +22,89 @@ const pool = new Pool({
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ====== Unified Login & Register Logic ======
+// ====== 1. Authentication (Find or Create) ======
 app.post("/api/auth/authenticate", async (req, res) => {
   const { email, password } = req.body;
-
-  // Basic Validation for Newbies
-  if (!email || !email.includes('@')) {
-    return res.status(400).json({ error: "Please enter a valid email address." });
-  }
-  if (!password || password.length < 6) {
-    return res.status(400).json({ error: "Password must be at least 6 characters." });
+  if (!email?.includes('@') || password?.length < 6) {
+    return res.status(400).json({ error: "Valid email and 6-char password required." });
   }
 
   try {
     const userEmail = email.toLowerCase().trim();
-    
-    // 1. Check if user already exists in the Database
     const result = await pool.query("SELECT * FROM users WHERE email = $1", [userEmail]);
     let user = result.rows[0];
 
     if (!user) {
-      // 2. REGISTER: If not found, create them (This populates your empty table)
-      const salt = await bcrypt.genSalt(10);
-      const hash = await bcrypt.hash(password, salt);
-      
-      const insertResult = await pool.query(
+      const hash = await bcrypt.hash(password, 10);
+      const insert = await pool.query(
         "INSERT INTO users (email, password_hash, username, credit_points) VALUES ($1, $2, $3, 100) RETURNING *",
         [userEmail, hash, userEmail.split('@')[0]]
       );
-      user = insertResult.rows[0];
-      console.log(`[AUTH] New user registered: ${userEmail}`);
+      user = insert.rows[0];
     } else {
-      // 3. LOGIN: If found, verify the password
       const isMatch = await bcrypt.compare(password, user.password_hash);
-      if (!isMatch) {
-        return res.status(401).json({ error: "Incorrect password for this email." });
-      }
-      console.log(`[AUTH] User logged in: ${userEmail}`);
+      if (!isMatch) return res.status(401).json({ error: "Invalid password." });
     }
 
-    // 4. Create a "Hall Pass" (JWT Token)
-    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
-
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        credit_points: user.credit_points
-      }
-    });
-
+    const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: user.id, email: user.email, username: user.username } });
   } catch (err) {
-    console.error("Database Error:", err.message);
-    res.status(500).json({ error: "Could not connect to database. Check Render settings." });
+    console.error(err);
+    res.status(500).json({ error: "Database connection failed." });
   }
 });
 
-// Protected route example
-app.get("/api/auth/profile", async (req, res) => {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "Not logged in" });
+// ====== 2. Fantasy Team Builder Logic ======
+app.post("/api/fantasy-teams", async (req, res) => {
+  const { userId, matchId, teamName, players, captainId, viceCaptainId } = req.body;
+
+  // Dream11 Rules Validation
+  if (players.length !== 11) return res.status(400).json({ error: "Team must have exactly 11 players." });
+  if (!captainId || !viceCaptainId) return res.status(400).json({ error: "Captain and Vice-Captain are required." });
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const result = await pool.query("SELECT id, email, username, credit_points FROM users WHERE id = $1", [decoded.id]);
+    const result = await pool.query(
+      "INSERT INTO fantasy_teams (user_id, match_id, team_name, players, captain_id, vice_captain_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+      [userId, matchId, teamName, JSON.stringify(players), captainId, viceCaptainId]
+    );
     res.json(result.rows[0]);
-  } catch (e) {
-    res.status(403).json({ error: "Session expired" });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to save team." });
   }
 });
 
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+// ====== 3. Match Simulation Engine ======
+app.post("/api/simulate/:matchId", async (req, res) => {
+  const { matchId } = req.params;
+  try {
+    // Get all teams for this match
+    const teams = await pool.query("SELECT * FROM fantasy_teams WHERE match_id = $1", [matchId]);
+    
+    for (let team of teams.rows) {
+      let totalPoints = 0;
+      const players = JSON.parse(team.players);
+      
+      players.forEach(p => {
+        // Weighted random scoring (0 to 100 points per player)
+        let pPoints = Math.floor(Math.random() * 50) + 10;
+        
+        // Captain Multipliers
+        if (p.id == team.captain_id) pPoints *= 2;
+        if (p.id == team.vice_captain_id) pPoints *= 1.5;
+        
+        totalPoints += pPoints;
+      });
+
+      // Update team points and global leaderboard
+      await pool.query("UPDATE fantasy_teams SET total_points = $1 WHERE id = $2", [totalPoints, team.id]);
+      await pool.query("UPDATE users SET total_points = total_points + $1 WHERE id = $2", [totalPoints, team.user_id]);
+    }
+    
+    res.json({ message: "Simulation successful! Points updated." });
+  } catch (err) {
+    res.status(500).json({ error: "Simulation failed." });
+  }
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+app.listen(PORT, () => console.log(`🚀 Fantasy Engine Live on port ${PORT}`));
