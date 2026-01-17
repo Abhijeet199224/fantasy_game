@@ -1,476 +1,272 @@
-# ðŸŽ‰ Fantasy Cricket Pro - Complete Setup Guide
+# 🏏 Fantasy Cricket - Dream Team Builder
 
-Welcome! This comprehensive guide covers everything you need to get your Fantasy Cricket application running.
+A complete, production-ready Dream11-style fantasy cricket web application with live API integration, built for 3-5 users with zero-cost deployment.
 
----
+## 🌟 Features
 
-## ðŸ“¦ What You're Getting
+- **Live Match Data**: Integrates with CricketData.org FREE API (100 calls/day)
+- **Team Builder**: Select 11 players with role constraints (WK, BAT, AR, BOWL)
+- **Captain/Vice-Captain**: 2x and 1.5x point multipliers
+- **Real-time Scoring**: Automatic simulation with realistic cricket points
+- **Leaderboard**: Competitive rankings for each match
+- **Mobile-First UI**: Dark theme, responsive design like Dream11
+- **Secure Auth**: JWT-based authentication with bcrypt password hashing
 
-A **complete, production-ready Fantasy Cricket Gaming Platform** with:
+## 🚀 Tech Stack
 
-- âœ… **Backend**: Express.js REST API (20+ endpoints)
-- âœ… **Frontend**: Vanilla JavaScript SPA with responsive dark UI
-- âœ… **Database**: PostgreSQL integration
-- âœ… **Authentication**: JWT + bcryptjs
-- âœ… **Features**: Team creation, leaderboards, real-time scoring, credit system
-- âœ… **Documentation**: 9 comprehensive guides
-- âœ… **Ready to Deploy**: Render.com one-click deployment
+- **Frontend**: Vanilla HTML/CSS/JavaScript (NO frameworks)
+- **Backend**: Node.js + Express
+- **Database**: PostgreSQL with pg driver
+- **API**: CricketData.org (free tier)
+- **Auth**: JWT + bcryptjs
 
----
+## 📋 Prerequisites
 
-## ðŸš€ Quick Start (15 minutes)
+- Node.js 14+ 
+- PostgreSQL database
+- CricketData.org API key (optional, has fallback)
 
-### **Step 1: Prerequisites**
+## 🔧 Local Setup
 
-You need:
-- **Node.js** v18+ (Download from https://nodejs.org)
-- **Git** (Download from https://git-scm.com)
-- **GitHub Account** (Create at https://github.com)
-
-Verify installation:
-```bash
-node --version    # Should be v18+
-npm --version     # Should be 9+
-git --version     # Any version is fine
-```
-
-### **Step 2: Clone Repository**
+### 1. Clone Repository
 
 ```bash
 git clone https://github.com/Abhijeet199224/fantasy_game.git
 cd fantasy_game
 ```
 
-### **Step 3: Install Dependencies**
+### 2. Install Dependencies
 
 ```bash
 npm install
 ```
 
-This installs: express, pg, cors, dotenv, bcryptjs, jsonwebtoken, axios, body-parser
+### 3. Setup Database
 
-### **Step 4: Setup Environment**
+Create a PostgreSQL database and run the schema:
 
 ```bash
-# Copy template
-cp .env.example .env
-
-# Edit .env file with your configuration
-# For now, defaults work for local development
+psql -U postgres -d your_database < schema.sql
 ```
 
-### **Step 5: Start Application**
+### 4. Environment Variables
+
+Create a `.env` file:
+
+```env
+# Required
+DATABASE_URL=postgresql://username:password@localhost:5432/fantasy_cricket
+JWT_SECRET=your-super-secret-jwt-key-change-this
+
+# Optional - Get from https://cricketdata.org
+CRICKET_API_KEY=your-api-key-here
+
+# Optional
+PORT=3000
+```
+
+**Get API Key**: 
+1. Visit https://cricketdata.org
+2. Sign up for free account
+3. Get API key from dashboard (100 free calls/day)
+
+### 5. Run Application
 
 ```bash
+# Development mode (with auto-reload)
+npm run dev
+
+# Production mode
 npm start
 ```
 
-You should see:
-```
-âœ… Database tables initialized
-ðŸš€ Server running on http://localhost:5000
-ðŸ“Š API Base: http://localhost:5000/api
-```
+Visit: `http://localhost:3000`
 
-### **Step 6: Open in Browser**
+## 🌐 Render Deployment
 
-Go to: **http://localhost:5000**
+### 1. Prepare Repository
 
-You'll see the Fantasy Cricket Pro login screen!
+Ensure these files are committed:
+- `server.js`
+- `public/index.html`
+- `schema.sql`
+- `package.json`
 
----
+### 2. Create Render PostgreSQL Database
 
-## ðŸ“‹ File Structure
+1. Go to [Render Dashboard](https://dashboard.render.com/)
+2. Click **New** → **PostgreSQL**
+3. Name: `fantasy-cricket-db`
+4. Plan: **Free**
+5. Create Database
+6. Copy **Internal Database URL**
 
-```
-fantasy_game/
-â”œâ”€â”€ server.js                      # Backend API (473 lines)
-â”œâ”€â”€ package.json                   # Dependencies
-â”œâ”€â”€ .env.example                   # Configuration template
-â”œâ”€â”€ .gitignore                     # Git ignore rules
-â”œâ”€â”€ public/
-â”‚   â””â”€â”€ index.html                # Frontend SPA (1,245 lines)
-â”œâ”€â”€ README.md                      # This file
-â”œâ”€â”€ START_HERE.md                  # 30-minute quick start
-â”œâ”€â”€ DEPLOYMENT.md                  # Deployment guide
-â”œâ”€â”€ API_DOCUMENTATION.md           # API reference
-â”œâ”€â”€ ARCHITECTURE.md                # System design
-â”œâ”€â”€ PROJECT_SUMMARY.md             # Complete overview
-â”œâ”€â”€ COMPLETE_MANIFEST.md           # File manifest
-â”œâ”€â”€ GIT_SETUP.md                   # Git guide
-â””â”€â”€ DOWNLOAD_INSTRUCTIONS.md       # Download guide
-```
+### 3. Run Schema
 
----
-
-## ðŸ”§ Backend Architecture (server.js)
-
-### **Database Tables**
-
-1. **users** - User accounts & authentication
-   - username, email, password_hash
-   - credit_points (100 on signup)
-   - total_points (lifetime score)
-
-2. **matches** - Cricket matches
-   - team1, team2, status
-   - start_date, api_data
-
-3. **players** - Players in matches
-   - name, team, role (Batsman/Bowler/All-rounder)
-   - base_points, current_points
-
-4. **fantasy_teams** - User's fantasy teams
-   - user_id, match_id
-   - players (JSON), total_points
-   - rank, created_at
-
-### **API Endpoints**
-
-**Authentication**
-- `POST /api/auth/register` - Create account
-- `POST /api/auth/login` - Login
-- `GET /api/auth/profile` - Get profile (protected)
-
-**Matches**
-- `GET /api/matches` - List all matches
-- `GET /api/matches/:matchId` - Match details
-- `GET /api/matches/:matchId/players` - Players in match
-
-**Fantasy Teams**
-- `POST /api/fantasy-teams` - Create team
-- `GET /api/fantasy-teams` - User's teams (protected)
-- `GET /api/fantasy-teams/:teamId` - Team details (protected)
-
-**Leaderboards**
-- `GET /api/leaderboard/:matchId` - Match leaderboard
-- `GET /api/global-leaderboard` - Global top 50
-
-**Admin**
-- `POST /api/admin/update-scores` - Update player scores
-
----
-
-## ðŸŽ¨ Frontend Features (public/index.html)
-
-### **Pages**
-
-1. **Authentication**
-   - Login form with validation
-   - Registration form
-   - JWT token storage
-
-2. **Browse Matches**
-   - View all cricket matches
-   - Match status (upcoming/live/completed)
-   - Quick team creation
-
-3. **Create Fantasy Team**
-   - Select 11 players
-   - View player stats
-   - Calculate team points
-   - Costs 10 credit points
-
-4. **My Teams**
-   - View all your teams
-   - See team rankings
-   - Track team points
-   - Browse player details
-
-5. **Leaderboards**
-   - Match-specific rankings
-   - Global top 50 players
-   - Real-time score updates
-
-6. **Profile**
-   - View your stats
-   - Credit points balance
-   - Total lifetime points
-   - Team history
-
-### **Dark Theme Design**
-
-- Modern teal/slate color scheme
-- Responsive layout (mobile/tablet/desktop)
-- Smooth animations
-- Accessible UI
-
----
-
-## ðŸ” Authentication Flow
-
-1. **Register**
-   ```
-   User enters: username, email, password
-   â†’ Password hashed with bcryptjs
-   â†’ User created with 100 credit points
-   â†’ JWT token returned (30-day expiry)
-   ```
-
-2. **Login**
-   ```
-   User enters: username, password
-   â†’ Password compared with hash
-   â†’ JWT token returned if valid
-   â†’ Token stored in localStorage
-   ```
-
-3. **Protected Endpoints**
-   ```
-   Client sends: Authorization: Bearer <token>
-   â†’ Token verified
-   â†’ User ID extracted from token
-   â†’ Request processed
-   ```
-
----
-
-## ðŸ’³ Credit Points System
-
-**How it works:**
-- New users get **100 credit points**
-- Each fantasy team costs **10 credit points**
-- Points replenish over time (configurable)
-- Shows in profile/header
-
-**Example:**
-```
-User gets 100 credits
-Creates 5 teams â†’ 100 - (5Ã—10) = 50 credits remaining
-```
-
----
-
-## ðŸ† Leaderboard System
-
-**Match Leaderboards:**
-- Shows all fantasy teams in a match
-- Ranked by total_points (descending)
-- Displays: username, team_name, total_points, rank
-
-**Global Leaderboards:**
-- Top 50 users by lifetime points
-- Shows: username, total_points, teams_count, rank
-
----
-
-## ðŸ“± Testing the App
-
-### **Test Account 1 (Already Works)**
-- Create new account in the app
-- Fill in: username, email, password
-- Automatic 100 credit points
-- Ready to create teams!
-
-### **Test Workflow**
-1. Register â†’ See login screen
-2. Login â†’ See matches
-3. Click match â†’ See players
-4. Create team â†’ Select 11 players
-5. View team â†’ See in "My Teams"
-6. Check leaderboard â†’ See your rank
-
----
-
-## ðŸŒ Deployment (Render.com)
-
-### **One-Click Deployment**
-
-1. **Commit to GitHub**
-   ```bash
-   git add .
-   git commit -m "Add Fantasy Cricket App"
-   git push origin main
-   ```
-
-2. **Go to Render.com**
-   - Sign up/login with GitHub
-   - Click "New +"
-   - Select "Web Service"
-   - Connect your repository
-   - Select `fantasy_game` repo
-
-3. **Configure**
-   - Name: fantasy-cricket-app
-   - Runtime: Node
-   - Build: `npm install`
-   - Start: `npm start`
-   - Add environment variables:
-     ```
-     NODE_ENV=production
-     PORT=5000
-     DATABASE_URL=[Render PostgreSQL URL]
-     JWT_SECRET=[Random string]
-     CRICKET_API_KEY=demo
-     ```
-
-4. **Deploy Database**
-   - Create Render PostgreSQL
-   - Copy connection string
-   - Paste as DATABASE_URL
-   - Deploy!
-
-5. **Done!** ðŸŽ‰
-   - App accessible at: `https://fantasy-cricket-app.onrender.com`
-
----
-
-## ðŸ› ï¸ Development
-
-### **Available Scripts**
+Connect to database and run schema:
 
 ```bash
-npm start       # Start production server
-npm run dev     # Start with nodemon (auto-reload)
+# From Render dashboard, use "Shell" or connect locally
+psql <INTERNAL_DATABASE_URL>
+\i schema.sql
 ```
 
-### **Project Dependencies**
+### 4. Create Web Service
 
-| Package | Purpose |
-|---------|---------|
-| express | Web framework |
-| pg | PostgreSQL client |
-| cors | Cross-origin requests |
-| bcryptjs | Password hashing |
-| jsonwebtoken | JWT tokens |
-| axios | HTTP requests |
-| dotenv | Environment variables |
+1. Click **New** → **Web Service**
+2. Connect your GitHub repo
+3. Configure:
+   - **Name**: `fantasy-cricket-app`
+   - **Environment**: `Node`
+   - **Build Command**: `npm install`
+   - **Start Command**: `npm start`
+   - **Plan**: Free
 
----
+### 5. Environment Variables
 
-## ðŸ› Troubleshooting
+Add in Render dashboard:
 
-### **"Port 5000 already in use"**
+```
+DATABASE_URL=<your-render-postgres-internal-url>
+JWT_SECRET=<generate-random-secret>
+CRICKET_API_KEY=<your-api-key-optional>
+```
+
+### 6. Deploy
+
+Click **Create Web Service** - auto-deploys on push!
+
+## 🎮 How to Play
+
+### 1. Register/Login
+- Create account with email/password
+- Auto-login with JWT token
+
+### 2. Select Match
+- View live/upcoming matches
+- Click to start building team
+
+### 3. Build Team
+- Select 11 players (max 100 credits)
+- Role limits:
+  - **Wicketkeepers**: 1-4
+  - **Batsmen**: 3-6
+  - **All-Rounders**: 1-4
+  - **Bowlers**: 3-6
+- First 2 players auto-selected as Captain (C) and Vice-Captain (VC)
+
+### 4. Submit & Simulate
+- Team automatically simulated on submit
+- Points calculated:
+  - **Batting**: 1pt/run, 4pts/50, 8pts/100, 1pt/4, 2pts/6, 6pts for SR>150
+  - **Bowling**: 25pts/wicket, 8pts for 4W, 50pts for 5W, 6pts for econ<5
+  - **Captain**: 2x points
+  - **Vice-Captain**: 1.5x points
+
+### 5. View Leaderboard
+- See rankings for each match
+- Compare scores with other users
+
+## 🔌 API Integration
+
+### CricketData.org Endpoints Used
+
+```javascript
+// Current matches (1-2 calls/day)
+GET https://api.cricketdata.org/currentMatches?apikey={key}
+
+// Match squad (2-4 calls per match)
+GET https://api.cricketdata.org/squad?apikey={key}&matchid={id}
+
+// Live scores (optional, for realistic simulation)
+GET https://api.cricketdata.org/matchInfo?apikey={key}&matchid={id}
+```
+
+### Rate Limiting Strategy
+
+- **Startup**: Fetch 1-2 matches + squads (~6 calls)
+- **Daily Cron**: Refresh data every 24h (~10 calls)
+- **Cache**: Store in DB for 24h
+- **Fallback**: Hardcoded India vs Australia + England vs SA
+- **Logging**: Track calls in `api_call_log` table
+
+**Total**: ~20 calls/day (well under 100 limit)
+
+## 📊 Database Schema
+
+```
+users (id, email, password, username)
+  ↓
+teams (id, user_id, match_id, players_json, captain_id, total_score)
+  ↓
+matches (id, name, match_date, api_match_id, is_live)
+  ↓
+players (id, match_id, name, role, team, credits)
+
+api_call_log (id, endpoint, timestamp)
+```
+
+## 🎨 UI Features
+
+- **Dark Theme**: Modern gradient backgrounds
+- **Role Tabs**: Filter by WK/BAT/AR/BOWL
+- **Live Credit Counter**: Real-time validation
+- **Player Cards**: Name, role, team, credits
+- **Captain Badges**: Visual C/VC indicators
+- **Responsive**: Mobile-first design
+- **Animations**: Hover effects, pulse badges
+
+## 🔒 Security
+
+- JWT token authentication
+- Bcrypt password hashing (10 rounds)
+- Input validation on all endpoints
+- SQL injection prevention (parameterized queries)
+- CORS enabled
+- API key hidden in env vars
+
+## 🐛 Troubleshooting
+
+### Database Connection Error
+```bash
+# Check DATABASE_URL format
+postgresql://user:password@host:port/database
+
+# For Render, use INTERNAL database URL
+# Enable SSL: ssl: { rejectUnauthorized: false }
+```
+
+### API Not Working
+```bash
+# Check if API key is set
+echo $CRICKET_API_KEY
+
+# Verify API calls in logs
+# App falls back to hardcoded data automatically
+```
+
+### Port Already in Use
 ```bash
 # Change port in .env
-PORT=3000
-
-# Or kill the process using port 5000
-# Windows: taskkill /PID [pid] /F
-# Mac/Linux: lsof -ti:5000 | xargs kill -9
+PORT=3001
 ```
 
-### **"Cannot find module 'express'"**
-```bash
-npm install
-```
+## 📝 License
 
-### **"Database connection error"**
-- Check .env file has DATABASE_URL
-- Verify PostgreSQL is running (for local dev)
-- For Render: Database should be auto-created
+MIT License - Free to use and modify
 
-### **"Invalid token" on protected endpoints**
-- Login again to get new token
-- Check localStorage has auth_token
-- Token expires after 30 days
+## 🤝 Contributing
 
----
+1. Fork repository
+2. Create feature branch
+3. Commit changes
+4. Push to branch
+5. Open pull request
 
-## ðŸ“š Documentation Files
+## 📧 Support
 
-This repo includes 9 comprehensive guides:
-
-1. **START_HERE.md** - 30-minute quick start guide
-2. **DEPLOYMENT.md** - Complete deployment walkthrough
-3. **API_DOCUMENTATION.md** - All API endpoints with examples
-4. **ARCHITECTURE.md** - System design & diagrams
-5. **PROJECT_SUMMARY.md** - Complete project overview
-6. **GIT_SETUP.md** - Git & GitHub instructions
-7. **DOWNLOAD_INSTRUCTIONS.md** - How to download the project
-8. **GITHUB_PUSH_GUIDE.md** - Push to GitHub guide
-9. **COMPLETE_MANIFEST.md** - File manifest & description
-
-Read **START_HERE.md** next!
+For issues, open a GitHub issue or contact the maintainer.
 
 ---
 
-## ðŸŽ¯ Next Steps
-
-### **To Run Locally**
-1. âœ… You have the code
-2. Run: `npm install`
-3. Run: `npm start`
-4. Go to: http://localhost:5000
-
-### **To Deploy Live**
-1. Push code to GitHub
-2. Go to Render.com
-3. Connect GitHub
-4. Configure environment
-5. Deploy!
-
-### **To Customize**
-- Edit `public/index.html` for UI changes
-- Edit `server.js` for backend changes
-- Edit `.env` for configuration
-- Restart: `npm start`
-
----
-
-## ðŸ¤ Support
-
-**Issues?**
-- Check error messages carefully
-- Read the relevant documentation
-- Try restarting: `npm start`
-- Delete `node_modules` and `npm install` again
-
-**Deployment issues?**
-- Check Render logs
-- Verify environment variables
-- Check database connection
-- Read DEPLOYMENT.md
-
----
-
-## ðŸ“ž Features & Capabilities
-
-### âœ… Currently Implemented
-- User authentication (register/login)
-- Fantasy team creation
-- Real-time leaderboards
-- Credit point system
-- Player selection
-- Team ranking
-- Dark theme UI
-- Responsive design
-- Mock player data (demo mode)
-
-### ðŸš€ Ready to Add
-- Real cricket API integration
-- Payment system
-- Email notifications
-- Chat/messaging
-- More game modes
-- Mobile app
-- User profiles
-- Social features
-
----
-
-## ðŸ“„ License
-
-Open source - use freely for personal/commercial projects
-
----
-
-## ðŸŽ‰ Summary
-
-You now have a **complete, production-ready Fantasy Cricket application** that you can:
-
-âœ… Run locally in 5 minutes
-âœ… Deploy to Render in 15 minutes
-âœ… Customize for your needs
-âœ… Share with friends
-âœ… Monetize if desired
-
-**Get started with**: `npm install && npm start`
-
-**Deploy with**: Push to GitHub + Render.com connect
-
-**Questions?** Read the documentation files!
-
----
-
-**Happy coding! ðŸš€**
+**Built with ⚡ for cricket fans by cricket fans**
