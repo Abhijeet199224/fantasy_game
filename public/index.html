@@ -75,23 +75,46 @@
     <script>
         let state = { token: null, user: null, players: [], selectedIds: [], matches: [], isLogin: true };
 
+        // Replace just the handleAuth function inside your <script>
         async function handleAuth() {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const endpoint = state.isLogin ? '/api/auth/login' : '/api/auth/register';
+            const emailInput = document.getElementById('username'); // Note: ID in HTML is 'username'
+            const passwordInput = document.getElementById('password');
             
-            const res = await fetch(endpoint, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ username, password, email: username + "@pro.com" })
-            });
-            const data = await res.json();
-            if(data.token) {
-                state.token = data.token;
-                state.user = data.user;
-                showDashboard();
-            } else alert(data.error);
+            const email = emailInput.value;
+            const password = passwordInput.value;
+        
+            if (!email || !password) {
+                alert("Please fill in both fields");
+                return;
+            }
+        
+            try {
+                const res = await fetch('/api/auth/authenticate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+        
+                const data = await res.json();
+        
+                if (res.ok) {
+                    // Save token so user stays logged in
+                    state.token = data.token;
+                    state.user = data.user;
+                    localStorage.setItem('auth_token', data.token);
+                    
+                    alert("Success! Welcome " + data.user.username);
+                    showDashboard();
+                } else {
+                    // Show the exact error from the server (e.g., "Incorrect password")
+                    alert(data.error || "Authentication failed");
+                }
+            } catch (err) {
+                console.error("Connection Error:", err);
+                alert("Cannot reach the server. Is it awake?");
+            }
         }
+
 
         function toggleAuthMode() { 
             state.isLogin = !state.isLogin;
