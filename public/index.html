@@ -3,216 +3,287 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fantasy Cricket Pro</title>
+    <title>CricketPro Fantasy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        :root { --primary: #32b8c6; --bg: #0f1112; --surface: #1a1b1c; --text: #e4e4e4; --accent: #f59e0b; }
-        body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; }
-        .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
-        .header { display: flex; justify-content: space-between; padding: 20px; background: var(--surface); border-bottom: 2px solid #2d2e2f; }
-        .card { background: var(--surface); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #2d2e2f; transition: 0.3s; }
-        .card:hover { border-color: var(--primary); transform: translateY(-3px); }
-        .btn { padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; }
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-simulate { background: var(--accent); color: black; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
-        .player-item { display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #2d2e2f; cursor: pointer; }
-        .player-item.selected { background: rgba(50, 184, 198, 0.2); border-left: 4px solid var(--primary); }
-        .hidden { display: none; }
-        .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #333; margin-left: 5px; }
-        .captain-select { font-size: 12px; margin-top: 5px; color: var(--accent); }
+        :root { --d11-red: #e11d48; --d11-dark: #0f172a; --d11-card: #1e293b; }
+        body { background-color: var(--d11-dark); color: white; font-family: 'Inter', sans-serif; }
+        .match-card { background: linear-gradient(145deg, #1e293b, #0f172a); border: 1px solid #334155; }
+        .player-row { border-bottom: 1px solid #334155; transition: 0.2s; }
+        .player-row:hover { background: #1e293b; }
+        .player-row.selected { background: rgba(225, 29, 72, 0.15); border-left: 4px solid var(--d11-red); }
+        .tab-btn.active { border-bottom: 3px solid var(--d11-red); color: var(--d11-red); }
+        .sticky-footer { background: #1e293b; box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .loading-spinner { border: 3px solid #334155; border-top: 3px solid var(--d11-red); border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
-<body>
-    <div id="app">
-        <div class="header">
-            <div style="font-size: 24px; font-weight: bold; color: var(--primary);">🏏 Fantasy Pro</div>
-            <div id="user-nav" class="hidden">
-                <span id="nav-user"></span> | Points: <span id="nav-points">0</span>
-                <button onclick="logout()" class="btn" style="background: transparent; color: #ef4444;">Logout</button>
+<body class="pb-24">
+
+    <!-- Header -->
+    <header class="bg-slate-900 p-4 sticky top-0 z-50 flex justify-between items-center border-b border-slate-700">
+        <h1 class="text-xl font-bold italic tracking-tighter text-rose-500">CRICKETPRO</h1>
+        <div id="user-stats" class="hidden flex items-center gap-4 text-sm">
+            <span class="bg-slate-800 px-3 py-1 rounded-full">Credits: 100</span>
+            <button onclick="logout()" class="text-slate-400">Logout</button>
+        </div>
+    </header>
+
+    <main class="max-w-md mx-auto p-4">
+        <!-- Auth Section -->
+        <section id="auth-section" class="mt-20 text-center">
+            <h2 class="text-3xl font-extrabold mb-8">Ready to Win?</h2>
+            <div class="space-y-4">
+                <input id="auth-username" type="text" placeholder="Username/Email" class="w-full p-4 rounded-lg bg-slate-800 border border-slate-700 focus:outline-none focus:border-rose-500">
+                <input id="auth-password" type="password" placeholder="Password" class="w-full p-4 rounded-lg bg-slate-800 border border-slate-700 focus:outline-none focus:border-rose-500">
+                <button onclick="handleAuth('login')" class="w-full bg-rose-600 p-4 rounded-lg font-bold hover:bg-rose-700">LOGIN</button>
+                <p class="text-slate-400 text-sm">New user? <a href="#" onclick="handleAuth('register')" class="text-rose-500">Create Account</a></p>
             </div>
-        </div>
+        </section>
 
-        <div class="container">
-            <!-- Auth Section -->
-            <section id="auth-section" class="card" style="max-width: 400px; margin: 50px auto;">
-                <h2 id="auth-title">Login</h2>
-                <input type="text" id="username" placeholder="Username" style="width:90%; padding:10px; margin-bottom:10px; background:#111; color:white; border:1px solid #333;">
-                <input type="password" id="password" placeholder="Password" style="width:90%; padding:10px; margin-bottom:20px; background:#111; color:white; border:1px solid #333;">
-                <button onclick="handleAuth()" class="btn btn-primary" style="width:100%">Continue</button>
-                <p style="text-align:center; font-size:12px; margin-top:10px; cursor:pointer" onclick="toggleAuthMode()">Switch Login/Register</p>
-            </section>
+        <!-- Dashboard Section -->
+        <section id="dashboard" class="hidden space-y-6">
+            <h2 class="text-lg font-bold text-slate-400 uppercase tracking-widest">Upcoming Matches</h2>
+            <div id="matches-grid" class="space-y-4"></div>
+        </section>
 
-            <!-- Main Dashboard -->
-            <section id="main-section" class="hidden">
-                <div style="display:flex; justify-content: space-between; align-items: center;">
-                    <h1>Active Matches</h1>
-                    <button class="btn btn-simulate" onclick="simulateAll()">Run Match Simulations ⚡</button>
+        <!-- Player Selection Section (Dream11 Style) -->
+        <section id="selection-screen" class="hidden">
+            <div class="flex justify-between items-center mb-4">
+                <button onclick="showDashboard()" class="text-slate-400">← Back</button>
+                <div class="text-center">
+                    <p class="text-xs text-slate-400">SELECT 11 PLAYERS</p>
+                    <p class="text-lg font-bold"><span id="count-selected">0</span>/11</p>
                 </div>
-                <div id="match-list" class="grid"></div>
+                <div class="w-10"></div>
+            </div>
 
-                <h1 style="margin-top:40px;">My Strategy Teams</h1>
-                <div id="my-teams" class="grid"></div>
-            </section>
+            <!-- Role Tabs -->
+            <div class="flex border-b border-slate-700 mb-2 overflow-x-auto">
+                <button class="tab-btn flex-1 p-3 text-sm active" onclick="filterPlayers('WK')">WK (1-4)</button>
+                <button class="tab-btn flex-1 p-3 text-sm" onclick="filterPlayers('BAT')">BAT (3-6)</button>
+                <button class="tab-btn flex-1 p-3 text-sm" onclick="filterPlayers('AR')">AR (1-4)</button>
+                <button class="tab-btn flex-1 p-3 text-sm" onclick="filterPlayers('BOWL')">BOWL (3-6)</button>
+            </div>
 
-            <!-- Team Builder Modal -->
-            <section id="builder-section" class="hidden card">
-                <h2>Build Your Team (Select 11)</h2>
-                <div id="player-pool" style="max-height: 400px; overflow-y: auto; margin-bottom: 20px;"></div>
-                <div id="selection-status" style="margin-bottom: 20px; color: var(--primary);">Selected: 0/11</div>
-                
-                <div id="captain-area" class="hidden">
-                    <h3>Pick Captain (2x) & Vice-Captain (1.5x)</h3>
-                    <select id="select-captain" style="padding:10px; width:45%"></select>
-                    <select id="select-vc" style="padding:10px; width:45%"></select>
-                </div>
+            <div id="player-list" class="space-y-1"></div>
+        </section>
 
-                <button id="save-team-btn" class="btn btn-primary" onclick="saveTeam()" style="margin-top:20px;">Finalize Team</button>
-                <button class="btn" onclick="showDashboard()">Cancel</button>
-            </section>
+        <!-- Captain Selection Section -->
+        <section id="captain-screen" class="hidden">
+            <h2 class="text-xl font-bold mb-2">Choose C & VC</h2>
+            <p class="text-sm text-slate-400 mb-6">C gets 2x points, VC gets 1.5x points</p>
+            <div id="captain-list" class="space-y-3"></div>
+        </section>
+    </main>
+
+    <!-- Footer Controls -->
+    <footer id="footer-controls" class="hidden fixed bottom-0 left-0 right-0 p-4 sticky-footer max-w-md mx-auto border-t border-slate-700">
+        <div class="flex justify-between items-center gap-4">
+            <div class="flex-1">
+                <p class="text-xs text-slate-400">CREDITS LEFT</p>
+                <p class="font-bold text-emerald-400"><span id="credits-left">100.0</span>/100</p>
+            </div>
+            <button id="next-btn" onclick="goToCaptainSelection()" class="bg-slate-700 text-slate-500 px-8 py-3 rounded-lg font-bold cursor-not-allowed" disabled>CONTINUE</button>
+            <button id="save-btn" onclick="saveTeam()" class="hidden bg-rose-600 px-8 py-3 rounded-lg font-bold">SAVE TEAM</button>
         </div>
-    </div>
+    </footer>
 
     <script>
-        let state = { token: null, user: null, players: [], selectedIds: [], matches: [], isLogin: true };
+        let state = {
+            token: localStorage.getItem('token'),
+            matches: [],
+            players: [],
+            selectedPlayers: [],
+            currentMatch: null,
+            currentRole: 'WK',
+            captainId: null,
+            viceCaptainId: null
+        };
 
-        // Replace just the handleAuth function inside your <script>
-        async function handleAuth() {
-            const emailInput = document.getElementById('username'); // Note: ID in HTML is 'username'
-            const passwordInput = document.getElementById('password');
-            
-            const email = emailInput.value;
-            const password = passwordInput.value;
-        
-            if (!email || !password) {
-                alert("Please fill in both fields");
-                return;
-            }
-        
+        const API = '/api';
+
+        async function handleAuth(type) {
+            const username = document.getElementById('auth-username').value;
+            const password = document.getElementById('auth-password').value;
             try {
-                const res = await fetch('/api/auth/authenticate', {
+                const res = await fetch(`${API}/auth/${type}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password })
+                    body: JSON.stringify({ username, email: username, password })
                 });
-        
                 const data = await res.json();
-        
-                if (res.ok) {
-                    // Save token so user stays logged in
+                if(data.token) {
+                    localStorage.setItem('token', data.token);
                     state.token = data.token;
-                    state.user = data.user;
-                    localStorage.setItem('auth_token', data.token);
-                    
-                    alert("Success! Welcome " + data.user.username);
                     showDashboard();
-                } else {
-                    // Show the exact error from the server (e.g., "Incorrect password")
-                    alert(data.error || "Authentication failed");
-                }
-            } catch (err) {
-                console.error("Connection Error:", err);
-                alert("Cannot reach the server. Is it awake?");
-            }
-        }
-
-
-        function toggleAuthMode() { 
-            state.isLogin = !state.isLogin;
-            document.getElementById('auth-title').innerText = state.isLogin ? "Login" : "Register";
+                } else alert(data.error);
+            } catch(e) { alert("Server Error"); }
         }
 
         async function showDashboard() {
             document.getElementById('auth-section').classList.add('hidden');
-            document.getElementById('builder-section').classList.add('hidden');
-            document.getElementById('main-section').classList.remove('hidden');
-            document.getElementById('user-nav').classList.remove('hidden');
-            document.getElementById('nav-user').innerText = state.user.username;
-            
-            const [mRes, pRes] = await Promise.all([fetch('/api/matches'), fetch('/api/players')]);
-            state.matches = await mRes.json();
-            state.players = await pRes.json();
-            renderMatches();
-        }
+            document.getElementById('selection-screen').classList.add('hidden');
+            document.getElementById('captain-screen').classList.add('hidden');
+            document.getElementById('footer-controls').classList.add('hidden');
+            document.getElementById('dashboard').classList.remove('hidden');
+            document.getElementById('user-stats').classList.remove('hidden');
 
-        function renderMatches() {
-            const list = document.getElementById('match-list');
-            list.innerHTML = state.matches.map(m => `
-                <div class="card">
-                    <h3>${m.team1} vs ${m.team2}</h3>
-                    <p>Status: ${m.status}</p>
-                    <button class="btn btn-primary" onclick="openBuilder(${m.id})">Create Team</button>
+            const res = await fetch(`${API}/matches`);
+            state.matches = await res.json();
+            
+            const grid = document.getElementById('matches-grid');
+            grid.innerHTML = state.matches.map(m => `
+                <div class="match-card p-6 rounded-2xl cursor-pointer" onclick="openSelection(${m.id})">
+                    <p class="text-xs text-slate-500 mb-2">${m.status.toUpperCase()}</p>
+                    <div class="flex justify-between items-center">
+                        <div class="text-center">
+                            <div class="w-12 h-12 bg-slate-700 rounded-full mx-auto mb-2 flex items-center justify-center font-bold">${m.team1.substring(0,3)}</div>
+                            <p class="font-bold">${m.team1}</p>
+                        </div>
+                        <p class="text-slate-500 font-bold italic">VS</p>
+                        <div class="text-center">
+                            <div class="w-12 h-12 bg-slate-700 rounded-full mx-auto mb-2 flex items-center justify-center font-bold">${m.team2.substring(0,3)}</div>
+                            <p class="font-bold">${m.team2}</p>
+                        </div>
+                    </div>
                 </div>
             `).join('');
         }
 
-        function openBuilder(matchId) {
-            state.currentMatchId = matchId;
-            state.selectedIds = [];
-            document.getElementById('main-section').classList.add('hidden');
-            document.getElementById('builder-section').classList.remove('hidden');
-            renderPlayerPool();
+        async function openSelection(matchId) {
+            state.currentMatch = matchId;
+            state.selectedPlayers = [];
+            const res = await fetch(`${API}/matches/${matchId}/players`);
+            state.players = await res.json();
+            
+            document.getElementById('dashboard').classList.add('hidden');
+            document.getElementById('selection-screen').classList.remove('hidden');
+            document.getElementById('footer-controls').classList.remove('hidden');
+            filterPlayers('WK');
         }
 
-        function renderPlayerPool() {
-            const pool = document.getElementById('player-pool');
-            pool.innerHTML = state.players.map(p => `
-                <div class="player-item ${state.selectedIds.includes(p.id) ? 'selected' : ''}" onclick="togglePlayer(${p.id})">
-                    <span>${p.name} <span class="badge">${p.role}</span></span>
-                    <span>${p.base_points} pts</span>
+        function filterPlayers(role) {
+            state.currentRole = role;
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.innerText.includes(role)));
+            
+            const list = document.getElementById('player-list');
+            list.innerHTML = state.players.filter(p => p.role === role).map(p => `
+                <div class="player-row p-4 flex justify-between items-center cursor-pointer ${state.selectedPlayers.find(sp => sp.id === p.id) ? 'selected' : ''}" onclick="togglePlayer(${p.id})">
+                    <div>
+                        <p class="font-bold">${p.name}</p>
+                        <p class="text-xs text-slate-500">${p.team} • SEL BY ${Math.floor(Math.random() * 80)}%</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="font-bold">${p.credits}</p>
+                        <p class="text-xs text-slate-500 uppercase">Credits</p>
+                    </div>
                 </div>
             `).join('');
-            
-            document.getElementById('selection-status').innerText = `Selected: ${state.selectedIds.length}/11`;
-            
-            if(state.selectedIds.length === 11) {
-                document.getElementById('captain-area').classList.remove('hidden');
-                const selPlayers = state.players.filter(p => state.selectedIds.includes(p.id));
-                const options = selPlayers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-                document.getElementById('select-captain').innerHTML = options;
-                document.getElementById('select-vc').innerHTML = options;
-            } else {
-                document.getElementById('captain-area').classList.add('hidden');
-            }
         }
 
         function togglePlayer(id) {
-            const idx = state.selectedIds.indexOf(id);
-            if(idx > -1) state.selectedIds.splice(idx, 1);
-            else if(state.selectedIds.length < 11) state.selectedIds.push(id);
-            renderPlayerPool();
+            const player = state.players.find(p => p.id === id);
+            const index = state.selectedPlayers.findIndex(sp => sp.id === id);
+            
+            if(index > -1) state.selectedPlayers.splice(index, 1);
+            else if(state.selectedPlayers.length < 11) state.selectedPlayers.push(player);
+            
+            updateUI();
+            filterPlayers(state.currentRole);
+        }
+
+        function updateUI() {
+            const count = state.selectedPlayers.length;
+            const creditsUsed = state.selectedPlayers.reduce((sum, p) => sum + Number(p.credits), 0);
+            
+            document.getElementById('count-selected').innerText = count;
+            document.getElementById('credits-left').innerText = (100 - creditsUsed).toFixed(1);
+            
+            const btn = document.getElementById('next-btn');
+            if(count === 11) {
+                btn.disabled = false;
+                btn.classList.replace('bg-slate-700', 'bg-emerald-600');
+                btn.classList.replace('text-slate-500', 'text-white');
+            } else {
+                btn.disabled = true;
+                btn.classList.replace('bg-emerald-600', 'bg-slate-700');
+                btn.classList.replace('text-white', 'text-slate-500');
+            }
+        }
+
+        function goToCaptainSelection() {
+            document.getElementById('selection-screen').classList.add('hidden');
+            document.getElementById('captain-screen').classList.remove('hidden');
+            document.getElementById('next-btn').classList.add('hidden');
+            document.getElementById('save-btn').classList.remove('hidden');
+
+            const list = document.getElementById('captain-list');
+            list.innerHTML = state.selectedPlayers.map(p => `
+                <div class="bg-slate-800 p-4 rounded-xl flex justify-between items-center">
+                    <div>
+                        <p class="font-bold">${p.name}</p>
+                        <p class="text-xs text-slate-500">${p.role}</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="setLeadership('C', ${p.id})" id="c-${p.id}" class="w-10 h-10 rounded-full border border-slate-600 flex items-center justify-center font-bold">C</button>
+                        <button onclick="setLeadership('VC', ${p.id})" id="vc-${p.id}" class="w-10 h-10 rounded-full border border-slate-600 flex items-center justify-center font-bold">VC</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function setLeadership(type, id) {
+            if(type === 'C') {
+                if(state.viceCaptainId === id) state.viceCaptainId = null;
+                state.captainId = id;
+            } else {
+                if(state.captainId === id) state.captainId = null;
+                state.viceCaptainId = id;
+            }
+            
+            document.querySelectorAll(`[id^="c-"], [id^="vc-"]`).forEach(b => {
+                b.classList.remove('bg-emerald-500', 'bg-blue-500', 'border-transparent');
+                b.classList.add('border-slate-600');
+            });
+
+            if(state.captainId) {
+                const b = document.getElementById(`c-${state.captainId}`);
+                b.classList.add('bg-emerald-500', 'border-transparent');
+            }
+            if(state.viceCaptainId) {
+                const b = document.getElementById(`vc-${state.viceCaptainId}`);
+                b.classList.add('bg-blue-500', 'border-transparent');
+            }
         }
 
         async function saveTeam() {
-            if(state.selectedIds.length !== 11) return alert("Select exactly 11 players");
-            const team = {
-                teamName: state.user.username + " XI",
-                matchId: state.currentMatchId,
-                players: state.players.filter(p => state.selectedIds.includes(p.id)),
-                captainId: parseInt(document.getElementById('select-captain').value),
-                viceCaptainId: parseInt(document.getElementById('select-vc').value)
-            };
+            if(!state.captainId || !state.viceCaptainId) return alert("Select C and VC");
             
-            await fetch('/api/fantasy-teams', {
+            const res = await fetch(`${API}/fantasy-teams`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
-                body: JSON.stringify(team)
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${state.token}`
+                },
+                body: JSON.stringify({
+                    matchId: state.currentMatch,
+                    teamName: "My Team 1",
+                    players: state.selectedPlayers,
+                    captainId: state.captainId,
+                    viceCaptainId: state.viceCaptainId
+                })
             });
-            alert("Team Created! Ready for Simulation.");
-            showDashboard();
+            const data = await res.json();
+            if(data.ok) {
+                alert("Team Created Successfully!");
+                showDashboard();
+            } else alert(data.error);
         }
 
-        async function simulateAll() {
-            for(let m of state.matches) {
-                await fetch(`/api/simulate/${m.id}`, { 
-                    method: 'POST', 
-                    headers: { 'Authorization': `Bearer ${state.token}` } 
-                });
-            }
-            alert("All matches simulated! Points updated.");
-            showDashboard();
-        }
+        function logout() { localStorage.removeItem('token'); location.reload(); }
 
-        function logout() { location.reload(); }
+        if(state.token) showDashboard();
     </script>
 </body>
 </html>
