@@ -1,144 +1,126 @@
 import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
+import { pool } from "./db.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-
-// ====== Config ======
-const PORT = process.env.PORT || 5000; // Render provides PORT
-const JWT_SECRET = process.env.JWT_SECRET || "change-this-in-render-env";
-
-// ====== Middleware ======
+app.use(cors());
 app.use(express.json());
-
-// Serve frontend from /public
 app.use(express.static(path.join(__dirname, "public")));
 
-// ====== In-memory DB (demo) ======
-// NOTE: On Render free tier, memory resets on deploy/restart.
-// This is just to make login/register work reliably.
-const db = {
-  users: [], // { id, username, email, passwordHash, credit_points, total_points }
-  nextUserId: 1
-};
+const JWT_SECRET = process.env.JWT_SECRET;
 
-// ====== Helpers ======
-function signToken(user) {
-  return jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: "7d" });
-}
-
+// ---------- AUTH ----------
 function auth(req, res, next) {
-  const header = req.headers.authorization || "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
-  if (!token) return res.status(401).json({ error: "Access token required" });
-
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.sendStatus(401);
   try {
     req.user = jwt.verify(token, JWT_SECRET);
     next();
   } catch {
-    return res.status(403).json({ error: "Invalid or expired token" });
+    res.sendStatus(403);
   }
 }
 
-// ====== API Routes ======
-app.get("/api/health", (req, res) => {
-  res.json({ ok: true, users: db.users.length });
-});
-
 app.post("/api/auth/register", async (req, res) => {
+  const { username, email, password } = req.body;
+  const hash = await bcrypt.hash(password, 10);
+
   try {
-    const { username, email, password } = req.body || {};
+    const result = await pool.query(
+      "INSERT INTO users (username, email, password_hash) VALUES ($1,$2,$3) RETURNING id",
+      [username, email, hash]
+    );
 
-    if (!username || !email || !password) {
-      return res.status(400).json({ error: "Username, email, and password are required" });
-    }
-
-    const exists = db.users.find(u => u.username === username || u.email === email);
-    if (exists) return res.status(400).json({ error: "Username or email already exists" });
-
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    const user = {
-      id: db.nextUserId++,
-      username,
-      email,
-      passwordHash,
-      credit_points: 100,
-      total_points: 0
-    };
-
-    db.users.push(user);
-
-    const token = signToken(user);
-
-    res.status(201).json({
-      token,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        credit_points: user.credit_points,
-        total_points: user.total_points
-      }
-    });
+    const token = jwt.sign({ id: result.rows[0].id }, JWT_SECRET);
+    res.json({ token });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(400).json({ error: "User already exists" });
   }
 });
 
 app.post("/api/auth/login", async (req, res) => {
-  try {
-    const { username, password } = req.body || {};
-    if (!username || !password) return res.status(400).json({ error: "Username and password required" });
+  const { username, password } = req.body;
+  const result = await pool.query(
+    "SELECT * FROM users WHERE username=$1",
+    [username]
+  );
 
-    const user = db.users.find(u => u.username === username);
-    if (!user) return res.status(401).json({ error: "Invalid username or password" });
+  if (!result.rows.length) return res.sendStatus(401);
+  const user = result.rows[0];
 
-    const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) return res.status(401).json({ error: "Invalid username or password" });
+  const ok = await bcrypt.compare(password, user.password_hash);
+  if (!ok) return res.sendStatus(401);
 
-    const token = signToken(user);
-
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        credit_points: user.credit_points,
-        total_points: user.total_points
-      }
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  const token = jwt.sign({ id: user.id }, JWT_SECRET);
+  res.json({ token });
 });
 
-app.get("/api/auth/profile", auth, (req, res) => {
-  const user = db.users.find(u => u.id === req.user.id);
-  if (!user) return res.status(404).json({ error: "User not found" });
-
-  res.json({
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    credit_points: user.credit_points,
-    total_points: user.total_points
-  });
+app.get("/api/auth/profile", auth, async (req, res) => {
+  const result = await pool.query(
+    "SELECT username,email,credit_points,total_points FROM users WHERE id=$1",
+    [req.user.id]
+  );
+  res.json(result.rows[0]);
 });
 
-// ====== SPA fallback ======
-// Important: keep this AFTER /api routes.
-app.get("*", (req, res) => {
+// ---------- MATCHES ----------
+app.get("/api/matches", async (_, res) => {
+  const result = await pool.query("SELECT * FROM matches ORDER BY start_date");
+  res.json(result.rows);
+});
+
+app.get("/api/matches/:id/players", async (req, res) => {
+  const result = await pool.query(
+    "SELECT * FROM players WHERE match_id=$1",
+    [req.params.id]
+  );
+  res.json(result.rows);
+});
+
+// ---------- FANTASY TEAMS ----------
+app.post("/api/fantasy-teams", auth, async (req, res) => {
+  const { matchId, teamName, selectedPlayers } = req.body;
+
+  await pool.query(
+    `INSERT INTO fantasy_teams (user_id, match_id, team_name, players)
+     VALUES ($1,$2,$3,$4)`,
+    [req.user.id, matchId, teamName, JSON.stringify(selectedPlayers)]
+  );
+
+  res.json({ ok: true });
+});
+
+app.get("/api/fantasy-teams", auth, async (req, res) => {
+  const result = await pool.query(
+    "SELECT * FROM fantasy_teams WHERE user_id=$1",
+    [req.user.id]
+  );
+  res.json(result.rows);
+});
+
+// ---------- LEADERBOARD ----------
+app.get("/api/global-leaderboard", async (_, res) => {
+  const result = await pool.query(`
+    SELECT username, total_points,
+    (SELECT COUNT(*) FROM fantasy_teams ft WHERE ft.user_id=u.id) AS teams_count
+    FROM users u
+    ORDER BY total_points DESC
+  `);
+
+  res.json(
+    result.rows.map((u, i) => ({ ...u, rank: i + 1 }))
+  );
+});
+
+app.get("*", (_, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// ====== Start server ======
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+app.listen(process.env.PORT || 5000);
