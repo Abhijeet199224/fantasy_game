@@ -1,4 +1,9 @@
-CREATE TABLE IF NOT EXISTS users (
+DROP TABLE IF EXISTS fantasy_teams;
+DROP TABLE IF EXISTS players;
+DROP TABLE IF EXISTS matches;
+DROP TABLE IF EXISTS users;
+
+CREATE TABLE users (
   id SERIAL PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
   email TEXT UNIQUE NOT NULL,
@@ -8,7 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS matches (
+CREATE TABLE matches (
   id SERIAL PRIMARY KEY,
   team1 TEXT,
   team2 TEXT,
@@ -16,7 +21,7 @@ CREATE TABLE IF NOT EXISTS matches (
   status TEXT DEFAULT 'Upcoming'
 );
 
-CREATE TABLE IF NOT EXISTS players (
+CREATE TABLE players (
   id SERIAL PRIMARY KEY,
   name TEXT,
   role TEXT,
@@ -25,7 +30,7 @@ CREATE TABLE IF NOT EXISTS players (
   match_id INT REFERENCES matches(id)
 );
 
-CREATE TABLE IF NOT EXISTS fantasy_teams (
+CREATE TABLE fantasy_teams (
   id SERIAL PRIMARY KEY,
   user_id INT REFERENCES users(id),
   match_id INT REFERENCES matches(id),
