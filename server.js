@@ -1,148 +1,113 @@
 import express from "express";
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
-import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
-import { pool } from "./db.js";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 const app = express();
-app.use(cors());
+
+const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key";
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-const JWT_SECRET = process.env.JWT_SECRET;
+// ====== Enhanced Mock Database ======
+const db = {
+  users: [],
+  teams: [], // User-created fantasy teams
+  matches: [
+    { id: 101, team1: "India", team2: "Australia", status: "Upcoming", date: "2026-01-20" },
+    { id: 102, team1: "England", team2: "South Africa", status: "Upcoming", date: "2026-01-22" }
+  ],
+  players: [
+    { id: 1, name: "Virat Kohli", role: "BAT", team: "India", base_points: 95 },
+    { id: 2, name: "Jasprit Bumrah", role: "BOWL", team: "India", base_points: 90 },
+    { id: 3, name: "KL Rahul", role: "WK", team: "India", base_points: 85 },
+    { id: 4, name: "Hardik Pandya", role: "AR", team: "India", base_points: 88 },
+    { id: 5, name: "Pat Cummins", role: "BOWL", team: "Australia", base_points: 92 },
+    { id: 6, name: "Glenn Maxwell", role: "AR", team: "Australia", base_points: 87 },
+    { id: 7, name: "Steve Smith", role: "BAT", team: "Australia", base_points: 89 },
+    { id: 8, name: "Travis Head", role: "BAT", team: "Australia", base_points: 84 },
+    { id: 9, name: "Rishabh Pant", role: "WK", team: "India", base_points: 82 },
+    { id: 10, name: "Mohammed Siraj", role: "BOWL", team: "India", base_points: 80 },
+    { id: 11, name: "Mitchell Starc", role: "BOWL", team: "Australia", base_points: 91 },
+    { id: 12, name: "Adam Zampa", role: "BOWL", team: "Australia", base_points: 83 },
+    { id: 13, name: "Ravindra Jadeja", role: "AR", team: "India", base_points: 90 },
+    { id: 14, name: "David Warner", role: "BAT", team: "Australia", base_points: 86 }
+  ]
+};
 
-// ---------- AUTH ----------
-function auth(req, res, next) {
+// ====== Middleware & Helpers ======
+const auth = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "No token" });
-
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
   try {
     req.user = jwt.verify(token, JWT_SECRET);
     next();
-  } catch {
-    res.status(403).json({ error: "Invalid token" });
-  }
-}
+  } catch { res.status(403).json({ error: "Invalid Token" }); }
+};
 
+// ====== API Routes ======
 app.post("/api/auth/register", async (req, res) => {
   const { username, email, password } = req.body;
-  const hash = await bcrypt.hash(password, 10);
-
-  try {
-    const r = await pool.query(
-      `INSERT INTO users (username,email,password_hash)
-       VALUES ($1,$2,$3) RETURNING id`,
-      [username, email, hash]
-    );
-
-    const token = jwt.sign({ id: r.rows[0].id }, JWT_SECRET);
-    res.json({ token });
-  } catch {
-    res.status(400).json({ error: "User already exists" });
-  }
+  const passwordHash = await bcrypt.hash(password, 10);
+  const user = { id: Date.now(), username, email, passwordHash, credit_points: 500, total_points: 0 };
+  db.users.push(user);
+  const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET);
+  res.json({ token, user });
 });
 
 app.post("/api/auth/login", async (req, res) => {
-  const { username, password } = req.body;
-
-  // 1️⃣ Validate input
-  if (!username || !password) {
-    return res.status(400).json({ error: "Username/email and password required" });
-  }
-
-  // 2️⃣ Allow login via username OR email
-  const r = await pool.query(
-    `SELECT * FROM users 
-     WHERE username=$1 OR email=$1`,
-    [username]
-  );
-
-  if (!r.rows.length) {
-    return res.status(401).json({ error: "Invalid username/email or password" });
-  }
-
-  const user = r.rows[0];
-
-  // 3️⃣ Compare password
-  const ok = await bcrypt.compare(password, user.password_hash);
-  if (!ok) {
-    return res.status(401).json({ error: "Invalid username/email or password" });
-  }
-
-  // 4️⃣ Generate token
-  const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "7d" });
-
-  // 5️⃣ Send response
-  res.json({ token });
+  const user = db.users.find(u => u.username === req.body.username);
+  if (user && await bcrypt.compare(req.body.password, user.passwordHash)) {
+    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET);
+    res.json({ token, user });
+  } else res.status(401).json({ error: "Invalid credentials" });
 });
 
+app.get("/api/matches", (req, res) => res.json(db.matches));
+app.get("/api/players", (req, res) => res.json(db.players));
 
-app.get("/api/auth/profile", auth, async (req, res) => {
-  const r = await pool.query(
-    "SELECT username,email,credit_points,total_points FROM users WHERE id=$1",
-    [req.user.id]
-  );
-  res.json(r.rows[0]);
+// Save Fantasy Team with Captain/VC logic
+app.post("/api/fantasy-teams", auth, (req, res) => {
+  const { teamName, matchId, players, captainId, viceCaptainId } = req.body;
+  const newTeam = {
+    id: Date.now(),
+    userId: req.user.id,
+    teamName,
+    matchId,
+    players, // Array of player objects
+    captainId,
+    viceCaptainId,
+    total_points: 0,
+    created_at: new Date()
+  };
+  db.teams.push(newTeam);
+  res.status(201).json(newTeam);
 });
 
-// ---------- MATCHES ----------
-app.get("/api/matches", async (_, res) => {
-  const r = await pool.query("SELECT * FROM matches");
-  res.json(r.rows);
+// Match Simulation Engine (Weighted Random)
+app.post("/api/simulate/:matchId", auth, (req, res) => {
+  const matchTeams = db.teams.filter(t => t.matchId === parseInt(req.params.matchId));
+  matchTeams.forEach(team => {
+    let score = 0;
+    team.players.forEach(p => {
+      // Weighted random: base_points + random swing
+      let pPoints = (p.base_points / 10) + (Math.random() * 20);
+      if (p.id === team.captainId) pPoints *= 2;
+      if (p.id === team.viceCaptainId) pPoints *= 1.5;
+      score += pPoints;
+    });
+    team.total_points = Math.round(score);
+    // Update user's global points
+    const user = db.users.find(u => u.id === team.userId);
+    if (user) user.total_points += team.total_points;
+  });
+  res.json({ message: "Simulation complete!", teams: matchTeams });
 });
 
-app.get("/api/matches/:id/players", async (req, res) => {
-  const r = await pool.query(
-    "SELECT * FROM players WHERE match_id=$1",
-    [req.params.id]
-  );
-  res.json(r.rows);
-});
-
-// ---------- TEAMS ----------
-app.post("/api/fantasy-teams", auth, async (req, res) => {
-  const { matchId, teamName, selectedPlayers } = req.body;
-
-  if (selectedPlayers.length !== 11) {
-    return res.status(400).json({ error: "Select 11 players" });
-  }
-
-  await pool.query(
-    `INSERT INTO fantasy_teams (user_id, match_id, team_name, players)
-     VALUES ($1,$2,$3,$4)`,
-    [req.user.id, matchId, teamName, JSON.stringify(selectedPlayers)]
-  );
-
-  res.json({ ok: true });
-});
-
-app.get("/api/fantasy-teams", auth, async (req, res) => {
-  const r = await pool.query(
-    "SELECT * FROM fantasy_teams WHERE user_id=$1",
-    [req.user.id]
-  );
-  res.json(r.rows);
-});
-
-// ---------- LEADERBOARD ----------
-app.get("/api/global-leaderboard", async (_, res) => {
-  const r = await pool.query(`
-    SELECT username,total_points,
-    (SELECT COUNT(*) FROM fantasy_teams WHERE user_id=users.id) AS teams_count
-    FROM users
-    ORDER BY total_points DESC
-  `);
-
-  res.json(r.rows.map((u, i) => ({ ...u, rank: i + 1 })));
-});
-
-app.get("*", (_, res) => {
-  res.sendFile(path.join(__dirname, "public/index.html"));
-});
-
-app.listen(process.env.PORT || 5000);
+app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
