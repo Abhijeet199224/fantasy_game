@@ -50,29 +50,47 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// CricketData.org API Helper
-const fetchCricketData = async (endpoint, params = {}) => {
+// CricketData.org API Helper with retry logic and improved error handling
+const fetchCricketData = async (endpoint, params = {}, retries = 3) => {
   if (!CRICKET_API_KEY) {
     console.log('No API key, using fallback data');
     return null;
   }
 
-  try {
-    const url = `${CRICKET_API_BASE}/${endpoint}`;
-    params.apikey = CRICKET_API_KEY;
+  for (let i = 0; i < retries; i++) {
+    try {
+      const url = `${CRICKET_API_BASE}/${endpoint}`;
+      params.apikey = CRICKET_API_KEY;
 
-    await logApiCall(endpoint);
+      await logApiCall(endpoint);
 
-    const response = await axios.get(url, { 
-      params,
-      timeout: 10000 
-    });
+      const response = await axios.get(url, { 
+        params,
+        timeout: 30000, // Increased timeout to 30 seconds
+        headers: {
+          'Connection': 'keep-alive',
+          'Accept': 'application/json'
+        }
+      });
 
-    return response.data;
-  } catch (error) {
-    console.error(`Cricket API Error (${endpoint}):`, error.message);
-    return null;
+      return response.data;
+    } catch (error) {
+      console.error(`Cricket API Error (${endpoint}), attempt ${i + 1}/${retries}:`, error.message);
+
+      // If this is the last retry, return null
+      if (i === retries - 1) {
+        console.log('All retry attempts failed, using fallback');
+        return null;
+      }
+
+      // Exponential backoff: wait 1s, 2s, 4s between retries
+      const backoffDelay = 1000 * Math.pow(2, i);
+      console.log(`Retrying in ${backoffDelay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, backoffDelay));
+    }
   }
+
+  return null;
 };
 
 // Seed hardcoded fallback data
@@ -376,7 +394,7 @@ app.get('/api/teams/user', authenticateToken, async (req, res) => {
   }
 });
 
-// SIMULATION ROUTE
+// SIMULATION ROUTE - FIXED JSON PARSING ERROR
 app.post('/api/simulate/:teamId', authenticateToken, async (req, res) => {
   try {
     const { teamId } = req.params;
@@ -391,7 +409,17 @@ app.post('/api/simulate/:teamId', authenticateToken, async (req, res) => {
     }
 
     const team = teamResult.rows[0];
-    const players = JSON.parse(team.players_json);
+
+    // FIX: Check if players_json is already an object or needs parsing
+    const players = typeof team.players_json === 'string' 
+      ? JSON.parse(team.players_json) 
+      : team.players_json;
+
+    // Validate that players is an array
+    if (!Array.isArray(players)) {
+      console.error('Players data is not an array:', players);
+      return res.status(500).json({ error: 'Invalid team data format' });
+    }
 
     // Simulate player scores
     const playerScores = players.map(player => {
@@ -449,7 +477,7 @@ app.post('/api/simulate/:teamId', authenticateToken, async (req, res) => {
     res.json({ totalScore, playerScores });
   } catch (error) {
     console.error('Simulation error:', error);
-    res.status(500).json({ error: 'Simulation failed' });
+    res.status(500).json({ error: 'Simulation failed', details: error.message });
   }
 });
 
@@ -479,24 +507,36 @@ const initializeApp = async () => {
   try {
     // Test database connection
     await pool.query('SELECT NOW()');
-    console.log('✅ Database connected');
+    console.log('âœ… Database connected');
 
     // Seed fallback data
     await seedFallbackData();
 
     // Start daily API refresh
     if (CRICKET_API_KEY) {
-      console.log('✅ Cricket API key found, starting refresh job');
+      console.log('âœ… Cricket API key found, starting refresh job');
       startDailyRefresh();
     } else {
-      console.log('⚠️  No Cricket API key, using fallback data only');
+      console.log('âš ï¸  No Cricket API key, using fallback data only');
     }
 
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
+    const server = app.listen(PORT, () => {
+      console.log(`ðŸš€ Server running on port ${PORT}`);
+      console.log(`==> Your service is live ðŸŽ‰`);
+      console.log(`==> `);
+      console.log(`==> ///////////////////////////////////////////////////////////`);
+      console.log(`==> `);
+      console.log(`==> Available at your primary URL`);
+      console.log(`==> `);
+      console.log(`==> ///////////////////////////////////////////////////////////`);
     });
+
+    // FIX: Configure server timeouts for Render deployment
+    server.keepAliveTimeout = 120000; // 120 seconds
+    server.headersTimeout = 120000;   // 120 seconds
+
   } catch (error) {
-    console.error('❌ Failed to initialize app:', error);
+    console.error('âŒ Failed to initialize app:', error);
     process.exit(1);
   }
 };
