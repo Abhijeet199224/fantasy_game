@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fantasy Cricket Pro</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #32b8c6;
+            --primary-dark: #1a6878;
+            --secondary: #1f2122;
+            --bg: #0f1112;
+            --surface: #1a1b1c;
+            --text: #e4e4e4;
+            --text-secondary: #a8a8a8;
+            --border: #2d2e2f;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --error: #ef4444;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background-color: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--primary);
+        }
+
+        nav {
+            display: flex;
+            gap: 2rem;
+        }
+
+        nav a {
+            color: var(--text);
+            text-decoration: none;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        nav a:hover {
+            color: var(--primary);
+        }
+
+        nav a.active {
+            color: var(--primary);
+            border-bottom: 2px solid var(--primary);
+            padding-bottom: 0.5rem;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logout-btn {
+            background-color: var(--error);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .logout-btn:hover {
+            background-color: #dc2626;
+        }
+
+        .section {
+            display: none;
+        }
+
+        .section.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--text);
+            font-weight: 500;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background-color: var(--surface);
+            color: var(--text);
+            font-size: 1rem;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(50, 184, 198, 0.1);
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            background-color: var(--secondary);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--border);
+        }
+
+        .btn-block {
+            width: 100%;
+        }
+
+        .btn-small {
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+        }
+
+        .auth-container {
+            max-width: 400px;
+            margin: 4rem auto;
+        }
+
+        .auth-card {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 2rem;
+        }
+
+        .auth-title {
+            font-size: 1.75rem;
+            margin-bottom: 2rem;
+            text-align: center;
+            color: var(--primary);
+        }
+
+        .auth-toggle {
+            text-align: center;
+            margin-top: 1rem;
+            font-size: 0.875rem;
+        }
+
+        .auth-toggle a {
+            color: var(--primary);
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .card {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            transition: all 0.3s;
+        }
+
+        .card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(50, 184, 198, 0.1);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+            color: var(--text);
+        }
+
+        .card-subtitle {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        th {
+            background-color: var(--secondary);
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid var(--border);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tr:hover {
+            background-color: var(--secondary);
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+
+        .alert-success {
+            background-color: rgba(34, 197, 94, 0.1);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+
+        .alert-error {
+            background-color: rgba(239, 68, 68, 0.1);
+            color: var(--error);
+            border: 1px solid var(--error);
+        }
+
+        .stat-box {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--primary);
+            margin: 0.5rem 0;
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .player-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .player-card {
+            background-color: var(--surface);
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .player-card:hover {
+            border-color: var(--primary);
+            background-color: var(--secondary);
+        }
+
+        .player-card.selected {
+            border-color: var(--primary);
+            background-color: rgba(50, 184, 198, 0.1);
+        }
+
+        .player-name {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .player-role {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .player-team {
+            font-size: 0.875rem;
+            color: var(--primary);
+        }
+
+        .player-points {
+            margin-top: 0.5rem;
+            font-weight: 600;
+            color: var(--success);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .badge-primary {
+            background-color: rgba(50, 184, 198, 0.2);
+            color: var(--primary);
+        }
+
+        .badge-success {
+            background-color: rgba(34, 197, 94, 0.2);
+            color: var(--success);
+        }
+
+        @media (max-width: 768px) {
+            nav {
+                gap: 1rem;
+                font-size: 0.875rem;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .player-list {
+                grid-template-columns: 1fr;
+            }
+
+            .header-content {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            table {
+                font-size: 0.875rem;
+            }
+
+            th, td {
+                padding: 0.75rem;
+            }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            border: 4px solid var(--border);
+            border-top: 4px solid var(--primary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 1rem auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <header id="header" class="hidden">
+        <div class="header-content">
+            <div class="logo">ðŸ Fantasy Cricket Pro</div>
+            <nav>
+                <a id="nav-matches" href="#" class="nav-link active" onclick="showSection('matches')">Matches</a>
+                <a id="nav-my-teams" href="#" class="nav-link" onclick="showSection('my-teams')">My Teams</a>
+                <a id="nav-leaderboard" href="#" class="nav-link" onclick="showSection('leaderboard')">Leaderboard</a>
+                <a id="nav-profile" href="#" class="nav-link" onclick="showSection('profile')">Profile</a>
+            </nav>
+            <div class="user-info">
+                <div>
+                    <div id="username-display" style="font-weight: 500;"></div>
+                    <div id="credits-display" style="font-size: 0.875rem; color: var(--text-secondary);">Credits: <span id="credits-count">0</span></div>
+                </div>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <section id="auth" class="section active">
+            <div class="auth-container">
+                <div class="auth-card">
+                    <div class="auth-title">Fantasy Cricket Pro</div>
+                    
+                    <div id="login-form">
+                        <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">Login</h2>
+                        <div class="form-group">
+                            <label for="login-username">Username</label>
+                            <input type="text" id="login-username" placeholder="Enter username">
+                        </div>
+                        <div class="form-group">
+                            <label for="login-password">Password</label>
+                            <input type="password" id="login-password" placeholder="Enter password">
+                        </div>
+                        <button class="btn btn-primary btn-block" onclick="login()">Login</button>
+                        <div class="auth-toggle">
+                            Don't have an account? <a onclick="toggleAuthForm()">Register</a>
+                        </div>
+                    </div>
+
+                    <div id="register-form" class="hidden">
+                        <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">Register</h2>
+                        <div class="form-group">
+                            <label for="register-username">Username</label>
+                            <input type="text" id="register-username" placeholder="Choose username">
+                        </div>
+                        <div class="form-group">
+                            <label for="register-email">Email</label>
+                            <input type="email" id="register-email" placeholder="Enter email">
+                        </div>
+                        <div class="form-group">
+                            <label for="register-password">Password</label>
+                            <input type="password" id="register-password" placeholder="Choose password">
+                        </div>
+                        <button class="btn btn-primary btn-block" onclick="register()">Register</button>
+                        <div class="auth-toggle">
+                            Already have an account? <a onclick="toggleAuthForm()">Login</a>
+                        </div>
+                    </div>
+
+                    <div id="auth-message"></div>
+                </div>
+            </div>
+        </section>
+
+        <section id="matches" class="section">
+            <h1>Available Matches</h1>
+            <div class="grid" id="matches-grid">
+                <div class="loading"><div class="spinner"></div>Loading matches...</div>
+            </div>
+        </section>
+
+        <section id="my-teams" class="section">
+            <h1>My Fantasy Teams</h1>
+            <div class="grid" id="teams-grid">
+                <div class="loading"><div class="spinner"></div>Loading your teams...</div>
+            </div>
+        </section>
+
+        <section id="leaderboard" class="section">
+            <h1>Global Leaderboard</h1>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Username</th>
+                            <th>Total Points</th>
+                            <th>Teams</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaderboard-body">
+                        <tr><td colspan="4" class="loading">Loading leaderboard...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="profile" class="section">
+            <h1>My Profile</h1>
+            <div class="grid">
+                <div class="stat-box">
+                    <div class="stat-label">Username</div>
+                    <div class="stat-value" id="profile-username">-</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">Email</div>
+                    <div class="stat-value" id="profile-email" style="font-size: 1rem;">-</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">Credit Points</div>
+                    <div class="stat-value" id="profile-credits" style="color: var(--warning);">0</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">Total Points</div>
+                    <div class="stat-value" id="profile-total">0</div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div id="create-team-modal" class="hidden" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 1000;">
+        <div class="card" style="max-width: 600px; max-height: 90vh; overflow-y: auto;">
+            <h2>Create Fantasy Team</h2>
+            <div class="form-group">
+                <label for="team-name">Team Name</label>
+                <input type="text" id="team-name" placeholder="Enter your team name">
+            </div>
+            <h3 style="margin-top: 1.5rem; margin-bottom: 1rem;">Select 11 Players</h3>
+            <div class="player-list" id="player-selection"></div>
+            <div style="margin-top: 1.5rem;">
+                <p>Selected: <strong id="selected-count">0</strong>/11 players</p>
+                <p>Total Points: <strong id="team-points">0</strong></p>
+            </div>
+            <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
+                <button class="btn btn-primary" style="flex: 1;" onclick="submitTeam()">Create Team</button>
+                <button class="btn btn-secondary" style="flex: 1;" onclick="closeTeamModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        let authToken = localStorage.getItem('auth_token');
+        let currentUser = null;
+        let selectedPlayers = [];
+        let currentMatchId = null;
+
+        function init() {
+            if (authToken) {
+                showMainApp();
+                loadMatches();
+                loadProfile();
+            } else {
+                showAuthPage();
+            }
+        }
+
+        async function login() {
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+
+            if (!username || !password) {
+                showAuthMessage('Please fill in all fields', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    authToken = data.token;
+                    localStorage.setItem('auth_token', authToken);
+                    showMainApp();
+                    loadMatches();
+                    loadProfile();
+                } else {
+                    showAuthMessage(data.error || 'Login failed', 'error');
+                }
+            } catch (error) {
+                showAuthMessage('Connection error', 'error');
+            }
+        }
+
+        async function register() {
+            const username = document.getElementById('register-username').value;
+            const email = document.getElementById('register-email').value;
+            const password = document.getElementById('register-password').value;
+
+            if (!username || !email || !password) {
+                showAuthMessage('Please fill in all fields', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    authToken = data.token;
+                    localStorage.setItem('auth_token', authToken);
+                    showMainApp();
+                    loadMatches();
+                    loadProfile();
+                } else {
+                    showAuthMessage(data.error || 'Registration failed', 'error');
+                }
+            } catch (error) {
+                showAuthMessage('Connection error', 'error');
+            }
+        }
+
+        function logout() {
+            authToken = null;
+            localStorage.removeItem('auth_token');
+            showAuthPage();
+        }
+
+        function showAuthPage() {
+            document.getElementById('auth').classList.add('active');
+            document.getElementById('header').classList.add('hidden');
+            document.getElementById('matches').classList.remove('active');
+            document.getElementById('my-teams').classList.remove('active');
+            document.getElementById('leaderboard').classList.remove('active');
+            document.getElementById('profile').classList.remove('active');
+        }
+
+        function showMainApp() {
+            document.getElementById('auth').classList.remove('active');
+            document.getElementById('header').classList.remove('hidden');
+        }
+
+        function showSection(sectionId) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.getElementById(sectionId).classList.add('active');
+
+            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+            document.getElementById(`nav-${sectionId}`).classList.add('active');
+
+            if (sectionId === 'leaderboard') loadLeaderboard();
+            if (sectionId === 'my-teams') loadMyTeams();
+        }
+
+        function toggleAuthForm() {
+            document.getElementById('login-form').classList.toggle('hidden');
+            document.getElementById('register-form').classList.toggle('hidden');
+        }
+
+        function showAuthMessage(msg, type) {
+            const messageEl = document.getElementById('auth-message');
+            messageEl.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+        }
+
+        async function loadMatches() {
+            try {
+                const response = await fetch(`${API_BASE}/matches`);
+                const matches = await response.json();
+
+                const grid = document.getElementById('matches-grid');
+                if (matches.length === 0) {
+                    grid.innerHTML = '<p>No matches available</p>';
+                    return;
+                }
+
+                grid.innerHTML = matches.slice(0, 6).map(m => `
+                    <div class="card">
+                        <div class="card-title">${m.team1} vs ${m.team2}</div>
+                        <div class="card-subtitle">Status: <span class="badge badge-primary">${m.status || 'Upcoming'}</span></div>
+                        <p style="margin-top: 1rem; color: var(--text-secondary);">
+                            ${new Date(m.start_date).toLocaleDateString()}
+                        </p>
+                        <button class="btn btn-primary" style="margin-top: 1rem;" onclick="prepareTeamCreation(${m.id}, '${m.team1}', '${m.team2}')">
+                            Create Team
+                        </button>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading matches:', error);
+            }
+        }
+
+        async function loadMyTeams() {
+            try {
+                const response = await fetch(`${API_BASE}/fantasy-teams`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const teams = await response.json();
+
+                const grid = document.getElementById('teams-grid');
+                if (teams.length === 0) {
+                    grid.innerHTML = '<p>No teams created yet. Create one from the Matches section!</p>';
+                    return;
+                }
+
+                grid.innerHTML = teams.map(t => `
+                    <div class="card">
+                        <div class="card-title">${t.team_name}</div>
+                        <p class="card-subtitle">Points: <strong>${t.total_points}</strong></p>
+                        <p class="card-subtitle">Players: ${JSON.parse(t.players).length}</p>
+                        <p style="margin-top: 1rem; font-size: 0.875rem; color: var(--text-secondary);">
+                            Created: ${new Date(t.created_at).toLocaleDateString()}
+                        </p>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading teams:', error);
+            }
+        }
+
+        async function loadLeaderboard() {
+            try {
+                const response = await fetch(`${API_BASE}/global-leaderboard`);
+                const leaderboard = await response.json();
+
+                const tbody = document.getElementById('leaderboard-body');
+                tbody.innerHTML = leaderboard.map(u => `
+                    <tr>
+                        <td>${u.rank}</td>
+                        <td>${u.username}</td>
+                        <td><strong>${u.total_points}</strong></td>
+                        <td>${u.teams_count}</td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading leaderboard:', error);
+            }
+        }
+
+        async function loadProfile() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/profile`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const user = await response.json();
+
+                currentUser = user;
+                document.getElementById('username-display').textContent = user.username;
+                document.getElementById('credits-display').innerHTML = `Credits: <span id="credits-count">${user.credit_points}</span>`;
+                document.getElementById('profile-username').textContent = user.username;
+                document.getElementById('profile-email').textContent = user.email;
+                document.getElementById('profile-credits').textContent = user.credit_points;
+                document.getElementById('profile-total').textContent = user.total_points;
+            } catch (error) {
+                console.error('Error loading profile:', error);
+            }
+        }
+
+        async function prepareTeamCreation(matchId, team1, team2) {
+            currentMatchId = matchId;
+            selectedPlayers = [];
+
+            try {
+                const response = await fetch(`${API_BASE}/matches/${matchId}/players`);
+                const players = await response.json();
+
+                const playerSelection = document.getElementById('player-selection');
+                playerSelection.innerHTML = players.map(p => `
+                    <div class="player-card" onclick="togglePlayerSelection(${p.id}, '${p.name}', ${p.base_points}, this)">
+                        <div class="player-name">${p.name}</div>
+                        <div class="player-role">${p.role}</div>
+                        <div class="player-team">${p.team}</div>
+                        <div class="player-points">Points: ${p.base_points}</div>
+                    </div>
+                `).join('');
+
+                document.getElementById('create-team-modal').style.display = 'flex';
+            } catch (error) {
+                alert('Error loading players');
+            }
+        }
+
+        function togglePlayerSelection(id, name, points, element) {
+            const index = selectedPlayers.findIndex(p => p.id === id);
+            if (index > -1) {
+                selectedPlayers.splice(index, 1);
+                element.classList.remove('selected');
+            } else {
+                if (selectedPlayers.length < 11) {
+                    selectedPlayers.push({ id, name, base_points: points });
+                    element.classList.add('selected');
+                } else {
+                    alert('You can only select 11 players');
+                }
+            }
+
+            document.getElementById('selected-count').textContent = selectedPlayers.length;
+            const totalPoints = selectedPlayers.reduce((sum, p) => sum + p.base_points, 0);
+            document.getElementById('team-points').textContent = totalPoints;
+        }
+
+        async function submitTeam() {
+            const teamName = document.getElementById('team-name').value;
+
+            if (!teamName) {
+                alert('Please enter team name');
+                return;
+            }
+
+            if (selectedPlayers.length !== 11) {
+                alert('Please select 11 players');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/fantasy-teams`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        matchId: currentMatchId,
+                        teamName,
+                        selectedPlayers
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert('Team created successfully!');
+                    closeTeamModal();
+                    loadProfile();
+                    loadMyTeams();
+                } else {
+                    alert(data.error || 'Failed to create team');
+                }
+            } catch (error) {
+                alert('Error creating team');
+            }
+        }
+
+        function closeTeamModal() {
+            document.getElementById('create-team-modal').style.display = 'none';
+            document.getElementById('team-name').value = '';
+            selectedPlayers = [];
+            document.querySelectorAll('.player-card').forEach(c => c.classList.remove('selected'));
+        }
+
+        init();
+    </script>
+</body>
+</html>ß
